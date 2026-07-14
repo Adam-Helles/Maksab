@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ shop_name }} — المنيو الإلكتروني</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
+    * { font-family: 'Tajawal', sans-serif; }
+    .card-hover { transition: transform .2s, box-shadow .2s; }
+    .card-hover:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+    .cat-pill.active { background: #1e3a5f; color: #fff; }
+    .product-card { display: none; }
+    .product-card.visible { display: flex; }
+    ::-webkit-scrollbar { height: 4px; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+  <!-- ─── Header ──────────────────────────────────────── -->
+  <header class="bg-[#1e3a5f] text-white sticky top-0 z-30 shadow-lg">
+    <div class="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div>
+        <h1 class="text-xl font-extrabold tracking-wide">{{ shop_name }}</h1>
+        <p class="text-xs text-blue-200 mt-0.5">{{ shop_subtitle }}</p>
+      </div>
+      <span class="text-3xl">🛒</span>
+    </div>
+  </header>
+
+  <!-- ─── Search ──────────────────────────────────────── -->
+  <div class="max-w-2xl mx-auto px-4 pt-4">
+    <div class="relative">
+      <input id="search" type="text" placeholder="ابحث عن منتج..."
+        class="w-full pr-10 pl-4 py-3 rounded-xl border border-gray-200 bg-white shadow-sm
+               focus:outline-none focus:ring-2 focus:ring-blue-300 text-sm" />
+      <span class="absolute right-3 top-3.5 text-gray-400 text-lg">🔍</span>
+    </div>
+  </div>
+
+  <!-- ─── Category Pills ──────────────────────────────── -->
+  <div class="max-w-2xl mx-auto px-4 pt-3">
+    <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+      <button class="cat-pill active flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold
+                     border border-[#1e3a5f] transition-all" data-cat="all">
+        الكل
+      </button>
+      {% for cat in categories %}
+      <button class="cat-pill flex-shrink-0 px-4 py-1.5 rounded-full text-sm font-semibold
+                     border border-gray-300 text-gray-600 bg-white transition-all"
+              data-cat="{{ cat.id }}">
+        {% if cat.icon %}{{ cat.icon }} {% endif %}{{ cat.name }}
+      </button>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ─── Products Grid ───────────────────────────────── -->
+  <main class="max-w-2xl mx-auto px-4 pt-4 pb-24">
+    <div id="grid" class="grid grid-cols-2 gap-3">
+      {% for product in products %}
+      <div class="product-card visible card-hover flex-col bg-white rounded-2xl shadow-sm overflow-hidden cursor-pointer"
+           data-cat="{{ product.category_id or 'null' }}"
+           data-name="{{ product.name }}"
+           onclick="openModal({{ product.id }})">
+        <!-- صورة أو placeholder -->
+        <div class="h-36 bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
+          {% if product.image_url %}
+          <img src="{{ product.image_url }}" alt="{{ product.name }}"
+               class="h-full w-full object-cover" />
+          {% else %}
+          <span class="text-5xl">🛍️</span>
+          {% endif %}
+        </div>
+        <div class="p-3 flex flex-col flex-1">
+          <h3 class="text-sm font-bold text-gray-800 leading-tight line-clamp-2">{{ product.name }}</h3>
+          {% if product.description %}
+          <p class="text-xs text-gray-400 mt-1 line-clamp-1">{{ product.description }}</p>
+          {% endif %}
+          <div class="mt-auto pt-2 flex items-center justify-between">
+            <span class="text-[#1e3a5f] font-extrabold text-base">
+              {{ "%.2f"|format(product.retail_price) }}
+              <span class="text-xs font-normal text-gray-400">{{ currency }}</span>
+            </span>
+            {% if product.stock_quantity <= 0 %}
+            <span class="text-xs bg-red-100 text-red-500 px-2 py-0.5 rounded-full">نفذ</span>
+            {% elif product.is_low_stock %}
+            <span class="text-xs bg-yellow-100 text-yellow-600 px-2 py-0.5 rounded-full">كمية محدودة</span>
+            {% endif %}
+          </div>
+          {% if product.carton_price > 0 and product.pieces_per_carton > 1 %}
+          <p class="text-xs text-gray-400 mt-1">
+            كرتونة ({{ product.pieces_per_carton }} قطعة): {{ "%.2f"|format(product.carton_price) }} {{ currency }}
+          </p>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- No results -->
+    <div id="no-results" class="hidden text-center py-16 text-gray-400">
+      <div class="text-5xl mb-3">😕</div>
+      <p class="text-sm">لا توجد منتجات مطابقة</p>
+    </div>
+  </main>
+
+  <!-- ─── Product Modal ───────────────────────────────── -->
+  <div id="modal" class="fixed inset-0 z-50 hidden">
+    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeModal()"></div>
+    <div class="absolute bottom-0 inset-x-0 max-w-2xl mx-auto bg-white rounded-t-3xl p-6
+                transform transition-transform duration-300 translate-y-full" id="modal-sheet">
+      <div class="w-10 h-1 bg-gray-200 rounded-full mx-auto mb-5"></div>
+      <div id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- ─── WhatsApp FAB ─────────────────────────────────── -->
+  <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40">
+    <button id="cart-btn" onclick="sendOrder()"
+      class="hidden items-center gap-2 bg-green-500 hover:bg-green-600 text-white
+             font-bold px-6 py-3 rounded-full shadow-xl transition-all text-sm">
+      <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.472-.148-.67.15
+                 -.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463
+                 -2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606
+                 .134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371
+                 -.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51
+                 -.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016
+                 -1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487
+                 .709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085
+                 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198
+                 -.57-.347z"/>
+        <path d="M12 0C5.373 0 0 5.373 0 12c0 2.127.558 4.122 1.532 5.848L.057 23.882
+                 a.5.5 0 00.61.625l6.163-1.615A11.945 11.945 0 0012 24c6.627 0 12-5.373
+                 12-12S18.627 0 12 0zm0 22c-1.96 0-3.8-.528-5.385-1.447l-.386-.228
+                 -3.997 1.048 1.069-3.894-.249-.4A9.96 9.96 0 012 12C2 6.477 6.477 2 12
+                 2s10 4.477 10 10-4.477 10-10 10z"/>
+      </svg>
+      اطلب عبر واتساب
+      <span id="cart-count" class="bg-white text-green-600 text-xs font-bold
+                                    w-5 h-5 rounded-full flex items-center justify-center">0</span>
+    </button>
+  </div>
+
+<script>
+  const PRODUCTS = {{ products_json|safe }};
+  const SHOP_PHONE = "{{ whatsapp_phone }}";
+  const CURRENCY   = "{{ currency }}";
+  let cart = {};
+
+  // ─── فلترة الأصناف ────────────────────────────────────
+  document.querySelectorAll('.cat-pill').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.cat-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filterProducts(btn.dataset.cat, document.getElementById('search').value);
+    });
+  });
+
+  document.getElementById('search').addEventListener('input', e => {
+    const activeCat = document.querySelector('.cat-pill.active')?.dataset.cat || 'all';
+    filterProducts(activeCat, e.target.value);
+  });
+
+  function filterProducts(cat, q) {
+    const cards = document.querySelectorAll('.product-card');
+    let visible = 0;
+    cards.forEach(card => {
+      const matchCat  = cat === 'all' || card.dataset.cat == cat;
+      const matchName = !q || card.dataset.name.toLowerCase().includes(q.toLowerCase());
+      if (matchCat && matchName) { card.classList.add('visible'); visible++; }
+      else card.classList.remove('visible');
+    });
+    document.getElementById('no-results').classList.toggle('hidden', visible > 0);
+  }
+
+  // ─── Modal المنتج ─────────────────────────────────────
+  function openModal(id) {
+    const p = PRODUCTS.find(x => x.id === id);
+    if (!p) return;
+    const inCart = cart[id]?.qty || 0;
+    document.getElementById('modal-body').innerHTML = `
+      <div class="flex gap-4 mb-4">
+        <div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-50 to-indigo-100
+                    flex items-center justify-center flex-shrink-0 text-4xl overflow-hidden">
+          ${p.image_url ? `<img src="${p.image_url}" class="w-full h-full object-cover"/>` : '🛍️'}
+        </div>
+        <div class="flex-1">
+          <h2 class="font-extrabold text-gray-800 text-base leading-snug">${p.name}</h2>
+          ${p.description ? `<p class="text-xs text-gray-400 mt-1">${p.description}</p>` : ''}
+          <p class="text-[#1e3a5f] font-extrabold text-lg mt-2">
+            ${p.retail_price.toFixed(2)} <span class="text-xs font-normal text-gray-400">${CURRENCY}</span>
+          </p>
+        </div>
+      </div>
+      ${p.carton_price > 0 && p.pieces_per_carton > 1 ? `
+        <div class="bg-blue-50 rounded-xl p-3 mb-4 text-sm">
+          <div class="flex justify-between">
+            <span class="text-gray-600">سعر الكرتونة (${p.pieces_per_carton} قطعة)</span>
+            <span class="font-bold text-[#1e3a5f]">${p.carton_price.toFixed(2)} ${CURRENCY}</span>
+          </div>
+        </div>` : ''}
+      ${p.stock_quantity <= 0 ? `
+        <div class="bg-red-50 text-red-500 rounded-xl p-3 text-center text-sm font-bold mb-4">
+          ⚠️ هذا المنتج غير متوفر حالياً
+        </div>` : `
+        <div class="flex items-center gap-4 mb-5">
+          <span class="text-sm font-bold text-gray-600">الكمية:</span>
+          <div class="flex items-center gap-3 bg-gray-100 rounded-xl px-2">
+            <button onclick="changeQty(${id},-1)"
+              class="text-2xl font-bold text-gray-500 w-9 h-9 flex items-center justify-center
+                     hover:text-red-500 transition-colors">−</button>
+            <span id="qty-${id}" class="text-lg font-extrabold text-[#1e3a5f] w-8 text-center">${inCart}</span>
+            <button onclick="changeQty(${id},1)"
+              class="text-2xl font-bold text-gray-500 w-9 h-9 flex items-center justify-center
+                     hover:text-green-500 transition-colors">+</button>
+          </div>
+        </div>
+        <button onclick="addToCart(${id})"
+          class="w-full bg-[#1e3a5f] hover:bg-[#152c4a] text-white font-bold py-3.5 rounded-2xl
+                 transition-colors text-sm">
+          ${inCart > 0 ? '✅ تحديث الكمية' : '🛒 أضف للطلب'}
+        </button>`}
+    `;
+    document.getElementById('modal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('modal-sheet').classList.remove('translate-y-full'), 10);
+  }
+
+  function closeModal() {
+    document.getElementById('modal-sheet').classList.add('translate-y-full');
+    setTimeout(() => document.getElementById('modal').classList.add('hidden'), 300);
+  }
+
+  // ─── السلة ────────────────────────────────────────────
+  function changeQty(id, delta) {
+    const el = document.getElementById(`qty-${id}`);
+    if (!el) return;
+    let val = parseInt(el.textContent) + delta;
+    if (val < 0) val = 0;
+    el.textContent = val;
+  }
+
+  function addToCart(id) {
+    const qty = parseInt(document.getElementById(`qty-${id}`)?.textContent || 0);
+    const p = PRODUCTS.find(x => x.id === id);
+    if (!p) return;
+    if (qty === 0) { delete cart[id]; }
+    else { cart[id] = { name: p.name, price: p.retail_price, qty }; }
+    updateCartBtn();
+    closeModal();
+  }
+
+  function updateCartBtn() {
+    const total = Object.values(cart).reduce((s, i) => s + i.qty, 0);
+    const btn = document.getElementById('cart-btn');
+    document.getElementById('cart-count').textContent = total;
+    if (total > 0) btn.classList.replace('hidden','flex');
+    else btn.classList.replace('flex','hidden');
+  }
+
+  function sendOrder() {
+    if (!Object.keys(cart).length) return;
+    let msg = `مرحباً 👋\nأريد طلب التالي:\n\n`;
+    let total = 0;
+    Object.values(cart).forEach(item => {
+      msg += `• ${item.name}  x${item.qty}  = ${(item.price * item.qty).toFixed(2)} ${CURRENCY}\n`;
+      total += item.price * item.qty;
+    });
+    msg += `\n💰 الإجمالي: ${total.toFixed(2)} ${CURRENCY}`;
+    const phone = SHOP_PHONE.replace(/\D/g,'');
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  }
+</script>
+</body>
+</html>

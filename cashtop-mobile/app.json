@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "CashTop",
+    "slug": "cashtop",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "cashtop",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1E3A5F"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.cashtop.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "نستخدم الكاميرا لمسح الباركود"
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1E3A5F"
+      },
+      "package": "com.cashtop.app",
+      "permissions": [
+        "CAMERA"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "نستخدم الكاميرا لمسح الباركود"
+        }
+      ],
+      "expo-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
