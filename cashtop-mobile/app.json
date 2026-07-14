@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "CashTop",
-    "slug": "cashtop",
+    "name": "Maksab",
+    "slug": "maksab",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "scheme": "cashtop",
+    "scheme": "maksab",
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/splash.png",
@@ -14,7 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cashtop.app",
+      "bundleIdentifier": "com.maksab.app",
       "infoPlist": {
         "NSCameraUsageDescription": "نستخدم الكاميرا لمسح الباركود"
       }
@@ -24,7 +24,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1E3A5F"
       },
-      "package": "com.cashtop.app",
+      "package": "com.maksab.app",
       "permissions": [
         "CAMERA"
       ]

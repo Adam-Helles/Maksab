@@ -22,8 +22,8 @@ export async function isBackendReachable(timeoutMs = 2500): Promise<boolean> {
 }
 
 const KEYS = {
-  ACCESS:  'cashtop_access_token',
-  REFRESH: 'cashtop_refresh_token',
+  ACCESS:  'maksab_access_token',
+  REFRESH: 'maksab_refresh_token',
 };
 
 // ── دوال التخزين الآمن ────────────────────────────────────
