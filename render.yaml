@@ -9,7 +9,6 @@ services:
     name: maksab-api
     plan: free
     runtime: python
-    region: frankfurt
     rootDir: cashtop-api
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
