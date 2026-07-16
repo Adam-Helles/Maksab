@@ -1,0 +1,34 @@
+databases:
+  - name: maksab-db
+    databaseName: maksab
+    user: maksab_user
+    plan: free
+
+services:
+  - type: web
+    name: maksab-api
+    plan: free
+    runtime: python
+    region: frankfurt
+    rootDir: cashtop-api
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: maksab-db
+          property: connectionString
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: false
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: ADMIN_USERNAME
+        value: admin
+      - key: ADMIN_EMAIL
+        value: admin@maksab.com
+      - key: ADMIN_PASSWORD
+        generateValue: true
