@@ -1,7 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-export const BASE_URL = 'http://10.5.0.3:8000/api/v1';
+export const BASE_URL = 'https://maksab-api.onrender.com/api/v1';
 export const ROOT_URL = BASE_URL.replace(/\/api\/v1\/?$/, '');
 
 /**
