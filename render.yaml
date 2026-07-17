@@ -30,4 +30,4 @@ services:
       - key: ADMIN_EMAIL
         value: admin@maksab.com
       - key: ADMIN_PASSWORD
-        generateValue: true
+        value: Maksab@Admin2025
