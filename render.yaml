@@ -1,8 +1,4 @@
-databases:
-  - name: maksab-db
-    databaseName: maksab
-    user: maksab_user
-    plan: free
+databases: []
 
 services:
   - type: web
@@ -14,9 +10,7 @@ services:
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: maksab-db
-          property: connectionString
+        value: postgresql://postgres.xbzbuihxhjjbrplusqoq:zkBtBiIXAN7XZfJ8@aws-0-eu-west-3.pooler.supabase.com:6543/postgres
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: SECRET_KEY
