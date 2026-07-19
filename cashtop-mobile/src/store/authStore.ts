@@ -20,6 +20,7 @@ interface AuthState {
     email?: string;
     phone?: string;
     password: string;
+    license_key: string;
   }) => Promise<void>;
   logout:        () => Promise<void>;
   restoreSession: () => Promise<void>;
@@ -43,6 +44,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const tokens = await authApi.login(username, password);
       await TokenStorage.setAccess(tokens.access_token);
       await TokenStorage.setRefresh(tokens.refresh_token);
+      await TokenStorage.setUser(tokens.user);
       set({
         user: tokens.user,
         isAuthenticated: true,
@@ -50,20 +52,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error: null,
       });
     } catch (err: any) {
-    // 1. استخراج الخطأ من Axios
-    const serverMessage = err.response?.data?.detail || 'فشل تسجيل الدخول';
-    
-    // 2. طباعة الخطأ في التيرمنال (المهم جداً للتشخيص)
-    console.log("❌ تفاصيل الخطأ:", err.response?.data);
-    
-    // 3. تحديث الـ state ليظهر الخطأ للمستخدم
-    set({
-      isLoading: false,
-      error: typeof serverMessage === 'string' ? serverMessage : JSON.stringify(serverMessage),
-    });
-    
-    throw err;
-  }
+      // client.ts يحوّل كل أخطاء Axios لـ new Error(message) عربي —
+      // الرسالة موجودة في err.message مباشرة وليس في err.response.data.detail
+      const serverMessage = err?.message || 'فشل تسجيل الدخول';
+      set({
+        isLoading: false,
+        error: serverMessage,
+      });
+      throw err;
+    }
   },
 
   // ── تسجيل تاجر جديد (محل + أول أدمن) ──────────────────
@@ -73,6 +70,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const tokens = await authApi.signup(payload);
       await TokenStorage.setAccess(tokens.access_token);
       await TokenStorage.setRefresh(tokens.refresh_token);
+      await TokenStorage.setUser(tokens.user);
       set({
         user: tokens.user,
         isAuthenticated: true,
@@ -80,15 +78,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         error: null,
       });
     } catch (err: any) {
-      const serverMessage = err.response?.data?.detail || 'فشل إنشاء الحساب';
-
-      console.log("❌ تفاصيل خطأ التسجيل:", err.response?.data);
-
+      // client.ts يحوّل كل أخطاء Axios لـ new Error(message) عربي
+      const serverMessage = err?.message || 'فشل إنشاء الحساب';
       set({
         isLoading: false,
-        error: typeof serverMessage === 'string' ? serverMessage : JSON.stringify(serverMessage),
+        error: serverMessage,
       });
-
       throw err;
     }
   },
@@ -104,13 +99,30 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true });
     try {
       const accessToken = await TokenStorage.getAccess();
-      if (!accessToken) {
+      const localUser = await TokenStorage.getUser();
+
+      if (!accessToken || !localUser) {
         set({ isLoading: false, isAuthenticated: false });
         return;
       }
-      // تحقق من صلاحية الـ token بجلب بيانات المستخدم
-      const user = await authApi.me();
-      set({ user, isAuthenticated: true, isLoading: false });
+
+      // 1. الدخول فوراً باستخدام البيانات المحلية (Offline-First)
+      // يضمن أن التطبيق يفتح فوراً بدون إنترنت، ويتجاوز شاشة الدخول بنجاح.
+      set({ user: localUser, isAuthenticated: true, isLoading: false });
+
+      // 2. تحديث بيانات المستخدم في الخلفية (إذا كان متصلاً)
+      try {
+        const user = await authApi.me();
+        await TokenStorage.setUser(user); // تحديث الكاش المحلي
+        set({ user });
+      } catch (err: any) {
+        // إذا كان الخطأ 401 (التوكن منتهي أو غير صالح)، نقوم بتسجيل الخروج.
+        // أما أخطاء الشبكة (Timeout, 500, Offline) فنتجاهلها ليبقى المستخدم مسجلاً.
+        if (err.response?.status === 401) {
+          await TokenStorage.clear();
+          set({ user: null, isAuthenticated: false });
+        }
+      }
     } catch {
       await TokenStorage.clear();
       set({ isLoading: false, isAuthenticated: false });

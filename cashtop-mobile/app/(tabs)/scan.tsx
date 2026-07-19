@@ -4,42 +4,94 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
 import { productsApi } from '../../src/api';
+import { useCartStore } from '../../src/store/cartStore';
+import { searchProductsCache, localProductToProduct } from '../../src/db/productsCache';
 
-const SCAN_COOLDOWN_MS = 1500;
+const SCAN_COOLDOWN_MS = 1200;
 
 export default function ScanScreen() {
-  const router = useRouter();
+  const router  = useRouter();
+  const params  = useLocalSearchParams<{ source?: string }>();
+
+  /**
+   * source === 'pos' → وضع نقطة البيع:
+   *   - إذا وُجد المنتج: يُضاف للسلة فوراً (+1 لكل مسح) بدون فتح صفحة أخرى
+   *   - إذا لم يوجد: تنبيه سريع فقط (مش "إضافة منتج جديد")
+   *
+   * source === undefined → وضع المخزون (السلوك الأصلي):
+   *   - موجود: يفتح صفحة تعديل المنتج
+   *   - غير موجود: يعرض خيار إضافة منتج جديد
+   */
+  const isPOSMode = params.source === 'pos';
+
+  const { addItem } = useCartStore();
+
   const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(true);
-  const [looking, setLooking] = useState(false);
+  const [looking,  setLooking]  = useState(false);
   const [manualMode, setManualMode] = useState(false);
   const [manualCode, setManualCode] = useState('');
-  const lastScanRef = useRef<{ code: string; time: number }>({ code: '', time: 0 });
+  const [lastAddedName, setLastAddedName] = useState<string | null>(null);
 
-  // Re-enable scanning every time the tab regains focus (coming back from a product screen)
+  const lastScanRef = useRef<{ code: string; time: number }>({ code: '', time: 0 });
+  const feedbackTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Re-enable scanning every time the tab regains focus
   useFocusEffect(useCallback(() => {
     setScanning(true);
     setLooking(false);
+    setLastAddedName(null);
   }, []));
 
+  // ── وضع POS: إضافة للسلة من الكاش المحلي ───────────────
+  const addToCartFromCache = useCallback((code: string) => {
+    // ابحث في الكاش المحلي أولاً (يعمل أونلاين وأوفلاين)
+    const cached = searchProductsCache(code, 1);
+    const local  = cached[0];
+
+    if (local && local.is_active) {
+      const product = localProductToProduct(local);
+      addItem(product, 'piece');
+      Vibration.vibrate(60);
+
+      // عرض اسم المنتج المضاف كـ feedback بصري لحظي
+      const name = local.name_ar || local.name;
+      setLastAddedName(name);
+      if (feedbackTimeout.current) clearTimeout(feedbackTimeout.current);
+      feedbackTimeout.current = setTimeout(() => setLastAddedName(null), 1800);
+
+      // إعادة تفعيل المسح فوراً (الكاشير يمسح منتج تلو الآخر بسرعة)
+      setScanning(true);
+    } else {
+      // المنتج غير موجود في الكاش → تنبيه مختصر
+      Alert.alert(
+        '⚠️ منتج غير موجود',
+        `لا يوجد منتج بهذا الباركود في الكاش المحلي.\n\nالباركود: ${code}\n\n` +
+        'تأكد من الاتصال بالإنترنت وأعد فتح شاشة POS لتحديث الكاش.',
+        [{ text: 'حسناً', onPress: () => setScanning(true) }],
+      );
+    }
+  }, [addItem]);
+
+  // ── وضع المخزون: الاستعلام من السيرفر ──────────────────
   const lookupBarcode = useCallback(async (code: string) => {
     setLooking(true);
     setScanning(false);
     try {
       const result: any = await productsApi.getByBarcode(code);
-      const product = result?.product ?? result; // support either { product } or the product itself
+      const product = result?.product ?? result;
       if (product?.id) {
         Vibration.vibrate(80);
         router.push({ pathname: '/product/[id]', params: { id: String(product.id) } });
       } else {
         handleNotFound(code);
       }
-    } catch (e) {
+    } catch {
       handleNotFound(code);
     } finally {
       setLooking(false);
@@ -60,15 +112,24 @@ export default function ScanScreen() {
     );
   };
 
+  // ── معالج المسح الموحّد ────────────────────────────────
   const onBarcodeScanned = (result: BarcodeScanningResult) => {
     const code = result.data?.trim();
     if (!code) return;
+
     const now = Date.now();
     if (code === lastScanRef.current.code && now - lastScanRef.current.time < SCAN_COOLDOWN_MS) {
-      return; // ignore duplicate rapid-fire scans of the same code
+      return; // تجاهل المسح السريع المتكرر لنفس الكود
     }
     lastScanRef.current = { code, time: now };
-    lookupBarcode(code);
+
+    if (isPOSMode) {
+      // وضع POS: إضافة فورية من الكاش — لا حاجة لـ await
+      addToCartFromCache(code);
+    } else {
+      // وضع المخزون: فتح صفحة المنتج
+      lookupBarcode(code);
+    }
   };
 
   const submitManual = () => {
@@ -76,7 +137,11 @@ export default function ScanScreen() {
     if (!code) return;
     setManualMode(false);
     setManualCode('');
-    lookupBarcode(code);
+    if (isPOSMode) {
+      addToCartFromCache(code);
+    } else {
+      lookupBarcode(code);
+    }
   };
 
   // ── Permission states ─────────────────────────────────
@@ -118,14 +183,30 @@ export default function ScanScreen() {
       {/* Overlay */}
       <SafeAreaView style={styles.overlay} pointerEvents="box-none">
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>📷 امسح الباركود</Text>
+          {isPOSMode ? (
+            <View style={styles.posModeHeader}>
+              <Text style={styles.headerTitle}>🛒 مسح سريع — POS</Text>
+              <Text style={styles.posModeHint}>كل مسح يضيف للسلة مباشرة</Text>
+            </View>
+          ) : (
+            <Text style={styles.headerTitle}>📷 امسح الباركود</Text>
+          )}
         </View>
 
         <View style={styles.frameWrap} pointerEvents="none">
-          <View style={styles.frame} />
+          <View style={[styles.frame, isPOSMode && { borderColor: Colors.accent }]} />
           <Text style={styles.hint}>وجّه الكاميرا نحو الباركود</Text>
         </View>
 
+        {/* Feedback وضع POS: اسم المنتج المضاف */}
+        {isPOSMode && lastAddedName && (
+          <View style={styles.addedPill}>
+            <Ionicons name="checkmark-circle" size={18} color="#10B981" />
+            <Text style={styles.addedText}>✅ أُضيف: {lastAddedName}</Text>
+          </View>
+        )}
+
+        {/* مؤشر البحث في وضع المخزون */}
         {looking && (
           <View style={styles.loadingPill}>
             <ActivityIndicator color={Colors.white} size="small" />
@@ -134,6 +215,14 @@ export default function ScanScreen() {
         )}
 
         <View style={styles.footer}>
+          {/* زر إغلاق في وضع POS */}
+          {isPOSMode && (
+            <TouchableOpacity style={styles.closePOSBtn} onPress={() => router.back()}>
+              <Ionicons name="close-circle" size={20} color="rgba(255,255,255,0.8)" />
+              <Text style={styles.closePOSText}>إغلاق والعودة للسلة</Text>
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity style={styles.manualBtn} onPress={() => setManualMode(true)}>
             <Ionicons name="keypad-outline" size={18} color={Colors.white} />
             <Text style={styles.manualBtnText}>إدخال يدوي</Text>
@@ -162,7 +251,7 @@ export default function ScanScreen() {
                 keyboardType="number-pad"
                 autoFocus
               />
-              <Button title="بحث" onPress={submitManual} fullWidth disabled={!manualCode.trim()} />
+              <Button title={isPOSMode ? 'إضافة للسلة' : 'بحث'} onPress={submitManual} fullWidth disabled={!manualCode.trim()} />
             </View>
           </SafeAreaView>
         </View>
@@ -180,17 +269,38 @@ const styles = StyleSheet.create({
   header: { padding: Spacing.lg, alignItems: 'center' },
   headerTitle: { color: Colors.white, fontSize: Fonts.sizes.lg, fontWeight: '800',
                  textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 6 },
+  posModeHeader: { alignItems: 'center', gap: 4 },
+  posModeHint: { color: 'rgba(255,255,255,0.7)', fontSize: 12,
+                 textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 4 },
   frameWrap: { alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
   frame: { width: 260, height: 160, borderRadius: Radius.lg, borderWidth: 3, borderColor: Colors.accent,
            backgroundColor: 'transparent' },
   hint: { color: Colors.white, fontSize: 13, fontWeight: '600',
           textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 6 },
+
+  // وضع POS: بطاقة تأكيد الإضافة
+  addedPill: {
+    position: 'absolute', top: '48%', alignSelf: 'center',
+    flexDirection: 'row-reverse', alignItems: 'center', gap: 8,
+    backgroundColor: 'rgba(16,185,129,0.92)', paddingHorizontal: 18, paddingVertical: 10,
+    borderRadius: Radius.full,
+  },
+  addedText: { color: Colors.white, fontSize: 14, fontWeight: '800' },
+
+  // مؤشر البحث (وضع المخزون)
   loadingPill: { position: 'absolute', top: '48%', alignSelf: 'center',
                  flexDirection: 'row-reverse', alignItems: 'center', gap: 8,
                  backgroundColor: 'rgba(0,0,0,0.75)', paddingHorizontal: 16, paddingVertical: 10,
                  borderRadius: Radius.full },
   loadingText: { color: Colors.white, fontSize: 13, fontWeight: '600' },
-  footer: { padding: Spacing.xl, alignItems: 'center' },
+
+  footer: { padding: Spacing.xl, alignItems: 'center', gap: 12 },
+  closePOSBtn: {
+    flexDirection: 'row-reverse', alignItems: 'center', gap: 6,
+    backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: Radius.full,
+  },
+  closePOSText: { color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: '600' },
   manualBtn: { flexDirection: 'row-reverse', alignItems: 'center', gap: 8,
                backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 20, paddingVertical: 12,
                borderRadius: Radius.full },

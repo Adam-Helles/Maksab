@@ -20,12 +20,18 @@ export default function ReportsScreen() {
     try {
       await action();
     } catch (e: any) {
-      const status = e?.response?.status;
-      if (status === 403) {
-        Alert.alert('صلاحية غير كافية', 'هذا التقرير متاح للمدير فقط');
-      } else {
-        Alert.alert('خطأ', e?.response?.data?.detail || 'تعذّر إنشاء الملف');
-      }
+      // client.ts يحوّل كل أخطاء Axios لـ new Error(message) عربي
+      const msg = e?.message || 'تعذّر إنشاء الملف';
+
+      // رسالة Render Cold Start تبدأ بـ ⏳
+      const isWakingUp = msg.startsWith('⏳');
+      Alert.alert(
+        isWakingUp ? '⏳ جاري تشغيل الخادم' : 'خطأ في التقرير',
+        isWakingUp
+          ? 'الخادم يستيقظ من وضع السكون (Render المجاني).\n\nانتظر 20-30 ثانية ثم أعد المحاولة.'
+          : msg,
+        [{ text: 'حسناً' }]
+      );
     } finally {
       setLoadingKey(null);
     }

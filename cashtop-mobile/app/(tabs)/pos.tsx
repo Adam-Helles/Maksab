@@ -202,7 +202,7 @@ export default function POSScreen() {
           'العملية محفوظة على الجهاز وبتتزامن تلقائياً أول ما يرجع الإنترنت.'
         );
       } catch (e: any) {
-        Alert.alert('خطأ', 'تعذّر حفظ البيع محلياً');
+        Alert.alert('خطأ في الحفظ المحلي', e?.message || 'تعذّر حفظ البيع على الجهاز');
       } finally {
         setSubmitting(false);
       }
@@ -251,7 +251,10 @@ export default function POSScreen() {
       }
       Alert.alert(asDraft ? 'تم حفظ المسودة' : 'تمت عملية البيع ✅', invoiceLabel, shareButtons);
     } catch (e: any) {
-      Alert.alert('خطأ', e?.response?.data?.detail || 'تعذّر إتمام عملية البيع');
+      // ⚠️ client.ts يحوّل كل أخطاء Axios لـ new Error(message) عربي —
+      // لذلك الرسالة موجودة دائماً في e.message مباشرة.
+      // رسالة خاصة لـ Render Cold Start (⏳ ...) موجودة في client.ts.
+      Alert.alert('تعذّر إتمام البيع', e?.message || 'خطأ غير متوقع');
     } finally {
       setSubmitting(false);
     }
@@ -306,7 +309,9 @@ export default function POSScreen() {
             onChangeText={setSearch}
             leftIcon={<Ionicons name="search" size={18} color={Colors.gray400} />}
             rightIcon={
-              <TouchableOpacity onPress={() => router.push('/scan')}>
+              <TouchableOpacity
+                onPress={() => router.push({ pathname: '/scan', params: { source: 'pos' } })}
+              >
                 <Ionicons name="barcode-outline" size={22} color={Colors.primary} />
               </TouchableOpacity>
             }

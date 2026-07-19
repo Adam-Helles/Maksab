@@ -2,7 +2,7 @@
 
 import * as SQLite from 'expo-sqlite';
 
-const db = SQLite.openDatabaseSync('cashtop_local.db');
+const db = SQLite.openDatabaseSync('maksab_local.db');
 
 export function initDatabase() {
   db.execSync(`

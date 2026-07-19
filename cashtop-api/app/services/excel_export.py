@@ -276,6 +276,11 @@ def generate_excel_report(
         _customer_debts_sheet(wb.create_sheet(), db, store_id)
         _supplier_debts_sheet(wb.create_sheet(), db, store_id)
 
+    # حماية: openpyxl ترفض حفظ workbook بدون أوراق
+    if not wb.sheetnames:
+        ws = wb.create_sheet("لا توجد بيانات")
+        ws["A1"] = "لا توجد بيانات لعرضها في هذا التقرير"
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)

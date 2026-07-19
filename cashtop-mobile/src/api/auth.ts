@@ -16,6 +16,7 @@ export const authApi = {
     email?: string;
     phone?: string;
     password: string;
+    license_key: string;        // ⚠️ إلزامي: بدون هذا لا يُقبل التسجيل
   }): Promise<AuthTokens> => {
     const { data } = await api.post<AuthTokens>('/stores/signup', payload);
     return data;

@@ -117,30 +117,49 @@ export async function syncOfflineSales() {
     return { pushed: 0, needsReview: 0 };
   }
 
-  const { data } = await api.post('/sync/offline-sales/push', {
-    sales: pending.map((s) => ({
-      id: s.id,
-      customer_id: s.customer_id,
-      items: s.items.map((i) => ({
-        product_id: i.product_id,
-        quantity: i.quantity,
-        unit_type: i.unit_type,
-        unit_price: i.unit_price,
-      })),
-      client_created_at: s.client_created_at,
-    })),
-  });
+  let attempt = 0;
+  const maxAttempts = 3;
 
-  let needsReviewCount = 0;
-  for (const result of data.results as Array<{
-    id: string; status: string; needs_review: boolean; reason: string | null;
-  }>) {
-    if (result.status === 'accepted' || result.status === 'already_applied') {
-      markOfflineSaleResult(result.id, result.needs_review, result.reason ?? null);
-      if (result.needs_review) needsReviewCount++;
+  while (attempt < maxAttempts) {
+    try {
+      const { data } = await api.post('/sync/offline-sales/push', {
+        sales: pending.map((s) => ({
+          id: s.id,
+          customer_id: s.customer_id,
+          items: s.items.map((i) => ({
+            product_id: i.product_id,
+            quantity: i.quantity,
+            unit_type: i.unit_type,
+            unit_price: i.unit_price,
+          })),
+          client_created_at: s.client_created_at,
+        })),
+      });
+
+      let needsReviewCount = 0;
+      for (const result of data.results as Array<{
+        id: string; status: string; needs_review: boolean; reason: string | null;
+      }>) {
+        if (result.status === 'accepted' || result.status === 'already_applied') {
+          markOfflineSaleResult(result.id, result.needs_review, result.reason ?? null);
+          if (result.needs_review) needsReviewCount++;
+        }
+        // status === 'rejected' → منسيبها synced=0 قصداً، لتترجع للمراجعة اليدوية بدل ما تُفقد
+      }
+
+      return { pushed: pending.length, needsReview: needsReviewCount };
+    } catch (e: any) {
+      attempt++;
+      // إذا كان الخطأ بسبب أن السيرفر لسه بيصحى من السكون (Render Cold Start)
+      if (e?.message?.startsWith('⏳') && attempt < maxAttempts) {
+        // ننتظر 10 ثواني ثم نحاول مرة تانية
+        await new Promise((resolve) => setTimeout(resolve, 10000));
+        continue;
+      }
+      // إذا استنفدنا المحاولات أو كان الخطأ لسبب آخر، نرميه
+      throw e;
     }
-    // status === 'rejected' → منسيبها synced=0 قصداً، لتترجع للمراجعة اليدوية بدل ما تُفقد
   }
 
-  return { pushed: pending.length, needsReview: needsReviewCount };
+  return { pushed: 0, needsReview: 0 };
 }

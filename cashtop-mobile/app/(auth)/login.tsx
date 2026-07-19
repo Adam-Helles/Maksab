@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, KeyboardAvoidingView,
-  Platform, ScrollView, Pressable, Alert,
+  Platform, ScrollView, Pressable,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -60,7 +60,7 @@ export default function LoginScreen() {
             <View style={styles.logoCircle}>
               <Text style={styles.logoEmoji}>💰</Text>
             </View>
-            <Text style={styles.appName}>CashTop</Text>
+            <Text style={styles.appName}>مَكْسَب</Text>
             <Text style={styles.appSub}>نظام إدارة المحل المتكامل</Text>
           </View>
 
@@ -122,18 +122,10 @@ export default function LoginScreen() {
             <Pressable style={styles.signupLink} onPress={() => router.push('/(auth)/signup')}>
               <Text style={styles.signupLinkText}>ليس لديك محل مسجّل؟ سجّل الآن</Text>
             </Pressable>
-
-            {/* بيانات تجريبية */}
-            <Pressable
-              style={styles.demoBtn}
-              onPress={() => { setUsername('admin'); setPassword('Admin@1234'); }}
-            >
-              <Text style={styles.demoText}>🧪 ملء بيانات تجريبية</Text>
-            </Pressable>
           </View>
 
           {/* ── Footer ──────────────────────────────────── */}
-          <Text style={styles.footer}>v1.0.0 © 2025 CashTop</Text>
+          <Text style={styles.footer}>v1.0.0 © 2025 Maksab</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
@@ -179,7 +171,5 @@ const styles = StyleSheet.create({
   signupLink:     { alignItems: 'center', marginTop: Spacing.lg },
   signupLinkText: { fontSize: 13, color: Colors.primary, fontWeight: '700' },
 
-  demoBtn:      { alignItems: 'center', marginTop: Spacing.md },
-  demoText:     { fontSize: 13, color: Colors.gray400, textDecorationLine: 'underline' },
   footer:       { textAlign: 'center', color: 'rgba(255,255,255,0.4)', marginTop: Spacing.xl, fontSize: 12 },
 });

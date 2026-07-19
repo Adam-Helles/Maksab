@@ -113,7 +113,7 @@ export default function MoreScreen() {
           </Card>
         </View>
 
-        <Text style={styles.version}>v1.0.0 © 2025 CashTop</Text>
+        <Text style={styles.version}>v1.0.0 © 2025 Maksab</Text>
         <View style={{ height: 24 }} />
       </ScrollView>
     </SafeAreaView>

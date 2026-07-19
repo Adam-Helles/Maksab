@@ -5,12 +5,8 @@ export const BASE_URL = 'https://maksab-api.onrender.com/api/v1';
 export const ROOT_URL = BASE_URL.replace(/\/api\/v1\/?$/, '');
 
 /**
- * فحص "أونلاين" الحقيقي المناسب لهاد المشروع: هل التطبيق قادر يوصل
- * للباكيند نفسه فعلياً، مش هل الجهاز عنده "إنترنت عام" (expo-network
- * بيفحص وصول عام للإنترنت، وهاد غير دقيق هون لأنه الجوال نفسه غالباً
- * مصدر الهوتسبوت — وضع الطيران عليه بيقفل الشبكة كلها مش بس النت).
- * Timeout قصير (2.5 ثانية) عشان ما توقف واجهة المستخدم لو الباكيند
- * مش قادر يوصله.
+ * فحص "أونلاين" الحقيقي: هل التطبيق قادر يوصل للباكيند فعلياً.
+ * Timeout قصير (2.5 ثانية) عشان ما يوقف الـ UI.
  */
 export async function isBackendReachable(timeoutMs = 2500): Promise<boolean> {
   try {
@@ -24,24 +20,33 @@ export async function isBackendReachable(timeoutMs = 2500): Promise<boolean> {
 const KEYS = {
   ACCESS:  'maksab_access_token',
   REFRESH: 'maksab_refresh_token',
+  USER:    'maksab_user_data',
 };
 
 // ── دوال التخزين الآمن ────────────────────────────────────
 export const TokenStorage = {
   getAccess:     () => SecureStore.getItemAsync(KEYS.ACCESS),
   getRefresh:    () => SecureStore.getItemAsync(KEYS.REFRESH),
+  getUser:       async () => {
+    const data = await SecureStore.getItemAsync(KEYS.USER);
+    return data ? JSON.parse(data) : null;
+  },
   setAccess:     (t: string) => SecureStore.setItemAsync(KEYS.ACCESS, t),
   setRefresh:    (t: string) => SecureStore.setItemAsync(KEYS.REFRESH, t),
+  setUser:       (u: any) => SecureStore.setItemAsync(KEYS.USER, JSON.stringify(u)),
   clear:         async () => {
     await SecureStore.deleteItemAsync(KEYS.ACCESS);
     await SecureStore.deleteItemAsync(KEYS.REFRESH);
+    await SecureStore.deleteItemAsync(KEYS.USER);
   },
 };
 
 // ── Axios instance ─────────────────────────────────────────
+// timeout = 35s: Render cold start قد يأخذ 15-30 ثانية على الخطة المجانية.
+// الـ 15 ثانية الافتراضية السابقة كانت تقطع الاتصال قبل ما السيرفر يصحى.
 export const api = axios.create({
   baseURL: BASE_URL,
-  timeout: 15000,
+  timeout: 35000,
   headers: { 'Content-Type': 'application/json' },
 });
 
@@ -74,7 +79,6 @@ api.interceptors.response.use(
     // 401 → حاول تجديد الـ token
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
-        // طلبات متعددة تنتظر التجديد
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         }).then((token) => {
@@ -94,10 +98,6 @@ api.interceptors.response.use(
           refresh_token: refreshToken,
         });
 
-        // ⚠️ Refresh Token Rotation: السيرفر بيلغي الـ refresh token
-        // القديم فوراً وبيرجّع وحدة جديدة مكانه. لازم نخزّن الاثنين
-        // (access + refresh) وإلا المرة الجاية رح نحاول نستخدم توكن
-        // ملغى، والسيرفر رح يعتبرها محاولة سرقة ويقفل الجلسة بالكامل.
         const newAccessToken = data.access_token;
         const newRefreshToken = data.refresh_token;
         await TokenStorage.setAccess(newAccessToken);
@@ -110,28 +110,43 @@ api.interceptors.response.use(
       } catch (refreshError) {
         processQueue(refreshError, null);
         await TokenStorage.clear();
-        // الـ store يستمع لهذا الحدث ويعمل logout
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
       }
     }
 
-    // استخرج رسالة الخطأ العربية من الـ backend
-    // ⚠️ إصلاح: FastAPI بيرجّع detail كـ array من objects بحالات كتير
-    // (خصوصاً 422 validation errors — راجع مثال limit > 200)، مش نص
-    // عادي دايماً. لازم نتأكد إنه string قبل ما نستخدمه كـ Error message،
-    // وإلا new Error(object) بيطلع "[object Object]" وبيضيع سبب
-    // الخطأ الحقيقي (هيك بالضبط صار وقاد لباگ بحث المنتجات أوفلاين).
-    const rawDetail = (error.response?.data as { detail?: unknown })?.detail;
-    const detail = typeof rawDetail === 'string' ? rawDetail : undefined;
-    const message = detail || getErrorMessage(error.response?.status);
-
+    // 402 → انتهاء الاشتراك
     if (error.response?.status === 402) {
-      // Import dynamically to avoid circular dependency issues at boot
       const { useAuthStore } = require('../store/authStore');
       useAuthStore.getState().setSubscriptionExpired(true);
     }
+
+    // ── استخرج رسالة الخطأ العربية ──────────────────────
+    // تمييز خاص لـ Render Cold Start (500/502/503/504/ECONNABORTED):
+    // بدل ما يطلع "خطأ في الخادم" المحيّر، يطلع رسالة واضحة للتاجر.
+    const status = error.response?.status;
+    const isNetworkTimeout = !error.response && (
+      error.code === 'ECONNABORTED' ||
+      error.code === 'ERR_NETWORK' ||
+      error.message?.includes('timeout')
+    );
+
+    if (isNetworkTimeout || status === 502 || status === 503 || status === 504) {
+      return Promise.reject(
+        new Error('⏳ جاري تشغيل الخادم، انتظر لحظة ثم أعد المحاولة...')
+      );
+    }
+
+    if (status === 500) {
+      return Promise.reject(
+        new Error('⚠️ حدث خطأ بالخادم — حاول مجدداً، أو تواصل مع الدعم إذا تكرر')
+      );
+    }
+
+    const rawDetail = (error.response?.data as { detail?: unknown })?.detail;
+    const detail = typeof rawDetail === 'string' ? rawDetail : undefined;
+    const message = detail || getErrorMessage(status);
 
     return Promise.reject(new Error(message));
   },
@@ -141,11 +156,11 @@ function getErrorMessage(status?: number): string {
   switch (status) {
     case 400: return 'بيانات غير صحيحة';
     case 401: return 'يرجى تسجيل الدخول مجدداً';
-    case 402: return 'انتهى الاشتراك، المرجو التجديد للاستمرار في حفظ البيانات';
+    case 402: return 'انتهى الاشتراك، الرجاء تجديده للاستمرار في حفظ البيانات';
     case 403: return 'غير مصرح لك بهذه العملية';
     case 404: return 'العنصر غير موجود';
-    case 422: return 'بيانات غير مكتملة';
-    case 500: return 'خطأ في الخادم، حاول مجدداً';
+    case 422: return 'بيانات غير مكتملة أو غير صحيحة';
+    case 429: return 'طلبات كثيرة جداً، انتظر قليلاً ثم أعد المحاولة';
     default:  return 'حدث خطأ غير متوقع';
   }
 }

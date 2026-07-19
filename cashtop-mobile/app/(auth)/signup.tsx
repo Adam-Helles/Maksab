@@ -16,6 +16,7 @@ interface FormErrors {
   full_name?: string;
   password?: string;
   confirmPassword?: string;
+  license_key?: string;
 }
 
 export default function SignupScreen() {
@@ -32,6 +33,7 @@ export default function SignupScreen() {
   const [password, setPassword]     = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPass, setShowPass]     = useState(false);
+  const [licenseKey, setLicenseKey] = useState('');
 
   const [errors, setErrors] = useState<FormErrors>({});
 
@@ -42,8 +44,9 @@ export default function SignupScreen() {
     else if (username.trim().length < 3) e.username = 'اسم المستخدم يجب أن يكون 3 أحرف على الأقل';
     if (!fullName.trim()) e.full_name = 'اسمك الكامل مطلوب';
     if (!password) e.password = 'كلمة المرور مطلوبة';
-    else if (password.length < 6) e.password = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+    else if (password.length < 8) e.password = 'كلمة المرور يجب أن تكون 8 أحرف على الأقل';
     if (confirmPassword !== password) e.confirmPassword = 'كلمتا المرور غير متطابقتين';
+    if (!licenseKey.trim()) e.license_key = 'مفتاح التفعيل مطلوب — تواصل مع الدعم للحصول عليه';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
@@ -60,6 +63,7 @@ export default function SignupScreen() {
         full_name: fullName.trim(),
         email: email.trim() || undefined,
         password,
+        license_key: licenseKey.trim().toUpperCase(),
       });
       // النجاح بيسجّل الدخول تلقائياً — الـ layout الرئيسي رح يحوّل المستخدم لشاشة التطبيق
     } catch {
@@ -88,7 +92,7 @@ export default function SignupScreen() {
             <View style={styles.logoCircle}>
               <Text style={styles.logoEmoji}>🏪</Text>
             </View>
-            <Text style={styles.appName}>CashTop</Text>
+            <Text style={styles.appName}>مَكْسَب</Text>
             <Text style={styles.appSub}>سجّل محلك وابدأ خلال دقيقة</Text>
           </View>
 
@@ -167,7 +171,7 @@ export default function SignupScreen() {
               label="كلمة المرور"
               value={password}
               onChangeText={(t) => { setPassword(t); setErrors(e => ({ ...e, password: undefined })); }}
-              placeholder="6 أحرف على الأقل"
+              placeholder="8 أحرف على الأقل"
               secureTextEntry={!showPass}
               error={errors.password}
               leftIcon={<Ionicons name="lock-closed-outline" size={18} color={Colors.gray400} />}
@@ -192,6 +196,27 @@ export default function SignupScreen() {
               leftIcon={<Ionicons name="lock-closed-outline" size={18} color={Colors.gray400} />}
             />
 
+            {/* ── مفتاح التفعيل ────────────────────────── */}
+            <View style={styles.licenseSection}>
+              <View style={styles.licenseTitleRow}>
+                <Ionicons name="key-outline" size={18} color="#F59E0B" />
+                <Text style={styles.licenseSectionLabel}>مفتاح التفعيل</Text>
+              </View>
+              <Text style={styles.licenseHint}>
+                تحتاج مفتاح تفعيل للانضمام — تواصل معنا للحصول عليه
+              </Text>
+              <Input
+                label=""
+                value={licenseKey}
+                onChangeText={(t) => { setLicenseKey(t); setErrors(e => ({ ...e, license_key: undefined })); }}
+                placeholder="XXXX-XXXX-XXXX-XXXX"
+                autoCapitalize="characters"
+                autoCorrect={false}
+                error={errors.license_key}
+                leftIcon={<Ionicons name="shield-checkmark-outline" size={18} color={Colors.gray400} />}
+              />
+            </View>
+
             <Button
               title="إنشاء الحساب"
               onPress={handleSignup}
@@ -206,7 +231,7 @@ export default function SignupScreen() {
             </Pressable>
           </View>
 
-          <Text style={styles.footer}>v1.0.0 © 2025 CashTop</Text>
+          <Text style={styles.footer}>v1.0.0 © 2025 Maksab</Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </LinearGradient>
@@ -252,6 +277,29 @@ const styles = StyleSheet.create({
     padding: Spacing.md, marginBottom: Spacing.md,
   },
   errorText:    { color: Colors.danger, fontSize: 13, flex: 1, textAlign: 'right' },
+
+  licenseSection: {
+    marginTop: Spacing.md,
+    backgroundColor: '#FFFBEB',
+    borderRadius: Radius.lg,
+    padding: Spacing.md,
+    borderWidth: 1,
+    borderColor: '#F59E0B',
+  },
+  licenseTitleRow: {
+    flexDirection: 'row-reverse',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  licenseSectionLabel: {
+    fontSize: 14, fontWeight: '800', color: '#92400E',
+    textAlign: 'right',
+  },
+  licenseHint: {
+    fontSize: 12, color: '#92400E', textAlign: 'right',
+    marginBottom: Spacing.sm,
+  },
 
   loginLink:     { alignItems: 'center', marginTop: Spacing.lg },
   loginLinkText: { fontSize: 13, color: Colors.primary, fontWeight: '700' },

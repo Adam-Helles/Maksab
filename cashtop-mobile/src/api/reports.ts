@@ -17,7 +17,7 @@ export const reportsApi = {
       params: { report_type: reportType, date_from: dateFrom, date_to: dateTo },
       responseType: 'arraybuffer',
     });
-    await saveAndShareFile(data, `cashtop_${reportType}_${todayStamp()}.xlsx`, XLSX_MIME);
+    await saveAndShareFile(data, `maksab_${reportType}_${todayStamp()}.xlsx`, XLSX_MIME);
   },
 
   /** متاح لكل المستخدمين المسجّلين (مش بس المدير) */
@@ -39,7 +39,7 @@ export const reportsApi = {
     await saveAndShareFile(data, `debts_${todayStamp()}.xlsx`, XLSX_MIME);
   },
 
-  exportInvoicePdf: async (invoiceId: number, shopName = 'CashTop'): Promise<void> => {
+  exportInvoicePdf: async (invoiceId: number, shopName = 'Maksab'): Promise<void> => {
     const { data } = await api.get(`/reports/pdf/invoice/${invoiceId}`, {
       params: { shop_name: shopName },
       responseType: 'arraybuffer',
@@ -48,7 +48,7 @@ export const reportsApi = {
   },
 
   /** يتطلب صلاحية manager فما فوق بالباكيند */
-  exportSalesPdf: async (dateFrom?: string, dateTo?: string, shopName = 'CashTop'): Promise<void> => {
+  exportSalesPdf: async (dateFrom?: string, dateTo?: string, shopName = 'Maksab'): Promise<void> => {
     const { data } = await api.get('/reports/pdf/sales', {
       params: { date_from: dateFrom, date_to: dateTo, shop_name: shopName },
       responseType: 'arraybuffer',

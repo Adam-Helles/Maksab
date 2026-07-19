@@ -136,9 +136,17 @@ def create_invoice(
 
     # ── حساب إجماليات الفاتورة ──────────────────────────
     subtotal = sum(i.total for i in items_db)
-    line_discount = data.discount_percent / 100 * subtotal
-    total_after_discount = subtotal - line_discount - data.discount_amount
-    tax_amount = total_after_discount * (data.tax_percent / 100)
+
+    # ✅ حماية: الخصم والضريبة يجب أن تكون في نطاق منطقي
+    safe_discount_percent = max(0.0, min(100.0, data.discount_percent))
+    safe_discount_amount  = max(0.0, data.discount_amount)
+    safe_tax_percent      = max(0.0, min(100.0, data.tax_percent))
+
+    line_discount = safe_discount_percent / 100 * subtotal
+    total_after_discount = subtotal - line_discount - safe_discount_amount
+    # ⚠️ حماية: منع الإجمالي من أن يصبح سالباً (لو خصم المبلغ أكبر من قيمة الفاتورة)
+    total_after_discount = max(0.0, total_after_discount)
+    tax_amount = total_after_discount * (safe_tax_percent / 100)
     total = round(total_after_discount + tax_amount, 3)
 
     paid = min(data.paid_amount, total)
