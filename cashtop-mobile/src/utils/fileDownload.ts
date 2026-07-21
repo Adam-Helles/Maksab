@@ -38,7 +38,7 @@ export async function saveAndShareFile(
   const base64 = arrayBufferToBase64(data);
   const fileUri = `${FileSystem.cacheDirectory}${filename}`;
   await FileSystem.writeAsStringAsync(fileUri, base64, {
-    encoding: FileSystem.EncodingType.Base64,
+    encoding: 'base64',
   });
 
   const canShare = await Sharing.isAvailableAsync();
