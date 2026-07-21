@@ -63,8 +63,8 @@ export default function SuppliersScreen() {
           <Text style={{ fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.primary }}>
             🚚 الموردين
           </Text>
-          <TouchableOpacity onPress={() => router.push('/customers')}>
-            <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 13 }}>→ العملاء</Text>
+          <TouchableOpacity onPress={() => router.replace('/customers')}>
+            <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 13 }}>العملاء ←</Text>
           </TouchableOpacity>
         </View>
         <Input

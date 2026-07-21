@@ -11,6 +11,8 @@ import { StatCard, Card, LoadingScreen, Badge } from '../../src/components/ui';
 import { Colors, Spacing, Fonts, Radius } from '../../src/types/theme';
 import type { DashboardSummary } from '../../src/types';
 
+import { isBackendReachable } from '../../src/api/client';
+
 const { width } = Dimensions.get('window');
 
 export default function DashboardScreen() {
@@ -18,6 +20,7 @@ export default function DashboardScreen() {
   const [topProds,  setTopProds]  = useState<any>(null);
   const [loading,   setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isOnline,  setIsOnline]  = useState(true);
   const { user, logout } = useAuthStore();
 
   const fetch = useCallback(async () => {
@@ -36,7 +39,21 @@ export default function DashboardScreen() {
     }
   }, []);
 
-  useEffect(() => { fetch(); }, []);
+  useEffect(() => { 
+    fetch(); 
+    
+    let mounted = true;
+    const checkOnline = async () => {
+      const online = await isBackendReachable();
+      if (mounted) setIsOnline(online);
+    };
+    checkOnline();
+    const interval = setInterval(checkOnline, 10000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const onRefresh = () => { setRefreshing(true); fetch(); };
 
@@ -51,6 +68,18 @@ export default function DashboardScreen() {
         <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
           <Ionicons name="log-out-outline" size={22} color="rgba(255,255,255,0.8)" />
         </TouchableOpacity>
+        
+        <View style={{ 
+          flexDirection: 'row-reverse', alignItems: 'center', 
+          backgroundColor: isOnline ? 'rgba(76, 175, 80, 0.2)' : 'rgba(244, 67, 54, 0.2)', 
+          paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginRight: 'auto', marginLeft: 10 
+        }}>
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isOnline ? '#4CAF50' : '#F44336', marginLeft: 6 }} />
+          <Text style={{ color: 'white', fontSize: 11, fontWeight: '600' }}>
+            {isOnline ? 'متصل بالإنترنت' : 'غير متصل (أوفلاين)'}
+          </Text>
+        </View>
+
         <View style={{ flex: 1, alignItems: 'flex-end' }}>
           <Text style={styles.greeting}>مرحباً، {user?.full_name} 👋</Text>
           <Text style={styles.headerSub}>لوحة التحكم</Text>

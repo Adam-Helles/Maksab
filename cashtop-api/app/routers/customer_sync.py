@@ -72,6 +72,40 @@ def push_payments(
             )
         )
         customer.current_debt = max(0.0, customer.current_debt - payment.amount)
+        
+        # Distribute the payment over unpaid invoices
+        from app.models.invoice import Invoice, InvoiceType, InvoiceStatus, PaymentStatus, Payment
+        
+        unpaid_invoices = db.query(Invoice).filter(
+            Invoice.customer_id    == payment.customer_id,
+            Invoice.store_id       == store_id,
+            Invoice.invoice_type   == InvoiceType.SALE,
+            Invoice.remaining_amount > 0,
+            Invoice.status         == InvoiceStatus.COMPLETED,
+        ).order_by(Invoice.created_at.asc()).all()
+
+        remaining_payment = payment.amount
+        for unpaid in unpaid_invoices:
+            if remaining_payment <= 0:
+                break
+                
+            apply = min(remaining_payment, unpaid.remaining_amount)
+            unpaid.paid_amount      = round(unpaid.paid_amount + apply, 2)
+            unpaid.remaining_amount = round(unpaid.remaining_amount - apply, 2)
+            remaining_payment       = round(remaining_payment - apply, 2)
+            
+            if unpaid.remaining_amount <= 0:
+                unpaid.payment_status = PaymentStatus.PAID
+                
+            db.add(Payment(
+                store_id    = store_id,
+                invoice_id  = unpaid.id,
+                amount      = apply,
+                method      = payment.method,
+                received_by = _.id,
+                notes       = "دفعة نقدية (أوفلاين)",
+            ))
+
         accepted.append(payment.id)
 
     db.commit()

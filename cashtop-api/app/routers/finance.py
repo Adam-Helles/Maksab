@@ -232,18 +232,25 @@ def customer_pay_debt(
         Invoice.invoice_type   == InvoiceType.SALE,
         Invoice.remaining_amount > 0,
         Invoice.status         == InvoiceStatus.COMPLETED,
-    ).order_by(Invoice.created_at.asc()).first()
+    ).order_by(Invoice.created_at.asc()).all()
 
-    if oldest_unpaid:
-        apply = min(actual, oldest_unpaid.remaining_amount)
-        oldest_unpaid.paid_amount      = round(oldest_unpaid.paid_amount + apply, 2)
-        oldest_unpaid.remaining_amount = round(oldest_unpaid.remaining_amount - apply, 2)
-        if oldest_unpaid.remaining_amount <= 0:
+    remaining_payment = actual
+    for unpaid in oldest_unpaid:
+        if remaining_payment <= 0:
+            break
+            
+        apply = min(remaining_payment, unpaid.remaining_amount)
+        unpaid.paid_amount      = round(unpaid.paid_amount + apply, 2)
+        unpaid.remaining_amount = round(unpaid.remaining_amount - apply, 2)
+        remaining_payment       = round(remaining_payment - apply, 2)
+        
+        if unpaid.remaining_amount <= 0:
             from app.models.invoice import PaymentStatus
-            oldest_unpaid.payment_status = PaymentStatus.PAID
+            unpaid.payment_status = PaymentStatus.PAID
+            
         payment_rec = Payment(
-            store_id    = store_id,   # ⚠️ جديد
-            invoice_id  = oldest_unpaid.id,
+            store_id    = store_id,
+            invoice_id  = unpaid.id,
             amount      = apply,
             method      = data.method,
             received_by = current_user.id,
