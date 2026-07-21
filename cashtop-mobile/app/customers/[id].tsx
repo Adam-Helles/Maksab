@@ -9,11 +9,14 @@ import { customersApi } from '../../src/api';
 import {
   getCustomerCache,
   getPendingPayments,
+  getPendingDebts,
   recordPaymentLocal,
+  recordDebtLocal,
   updateCustomerProfileLocal,
   runCustomerSync,
   type LocalCustomer,
   type LocalPendingPayment,
+  type LocalPendingDebt,
 } from '../../src/db/customerSync';
 
 export default function CustomerStatementScreen() {
@@ -23,12 +26,18 @@ export default function CustomerStatementScreen() {
 
   const [customer, setCustomer] = useState<LocalCustomer | null>(null);
   const [pendingPayments, setPendingPayments] = useState<LocalPendingPayment[]>([]);
+  const [pendingDebts, setPendingDebts] = useState<LocalPendingDebt[]>([]);
   const [statement, setStatement] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [syncStatus, setSyncStatus] = useState<'offline' | 'synced' | 'syncing'>('syncing');
   const [showPay, setShowPay] = useState(false);
   const [payAmount, setPayAmount] = useState('');
   const [paying, setPaying] = useState(false);
+
+  const [showDebt, setShowDebt] = useState(false);
+  const [debtAmount, setDebtAmount] = useState('');
+  const [debtNotes, setDebtNotes] = useState('');
+  const [addingDebt, setAddingDebt] = useState(false);
 
   // ── تعديل بيانات العميل ────────────────────────────────
   const [showEdit, setShowEdit] = useState(false);
@@ -57,6 +66,7 @@ export default function CustomerStatementScreen() {
     const cached = getCustomerCache(customerId);
     setCustomer(cached);
     setPendingPayments(getPendingPayments(customerId));
+    setPendingDebts(getPendingDebts(customerId));
 
     // 3) كشف الحساب التفصيلي (سجل الفواتير) — أونلاين فقط حالياً
     try {
@@ -89,6 +99,28 @@ export default function CustomerStatementScreen() {
       );
     } finally {
       setPaying(false);
+    }
+  };
+
+  const submitDebt = async () => {
+    const amount = Number(debtAmount);
+    if (!amount || amount <= 0) {
+      Alert.alert('أدخل مبلغاً صحيحاً');
+      return;
+    }
+    setAddingDebt(true);
+    try {
+      recordDebtLocal(customerId, amount, debtNotes.trim() || null);
+      setShowDebt(false);
+      setDebtAmount('');
+      setDebtNotes('');
+      await load();
+      Alert.alert(
+        'تم تسجيل الدين ✅',
+        syncStatus === 'offline' ? 'رح يتزامن تلقائياً أول ما يتوفر نت' : undefined
+      );
+    } finally {
+      setAddingDebt(false);
     }
   };
 
@@ -138,13 +170,22 @@ export default function CustomerStatementScreen() {
     : Array.isArray(statement?.items) ? statement.items
     : [];
 
-  const pendingAsTransactions = pendingPayments.map((p) => ({
-    id: p.id,
-    type: 'دفعة (لسا ما انزامنت)',
-    amount: -p.amount,
-    date: p.client_created_at,
-    pending: true,
-  }));
+  const pendingAsTransactions = [
+    ...pendingPayments.map((p) => ({
+      id: p.id,
+      type: 'دفعة (لسا ما انزامنت)',
+      amount: -p.amount,
+      date: p.client_created_at,
+      pending: true,
+    })),
+    ...pendingDebts.map((d) => ({
+      id: d.id,
+      type: d.notes || 'دين (لسا ما انزامن)',
+      amount: d.amount,
+      date: d.client_created_at,
+      pending: true,
+    }))
+  ];
 
   const transactions = [...pendingAsTransactions, ...serverTransactions];
 
@@ -190,10 +231,16 @@ export default function CustomerStatementScreen() {
           </View>
         </Card>
 
-        {customer.current_debt > 0 && (
-          <Button title="تسجيل دفعة" variant="success" fullWidth onPress={() => setShowPay(true)}
-                  style={{ marginBottom: Spacing.lg }} />
-        )}
+        <View style={{ flexDirection: 'row-reverse', gap: Spacing.md, marginBottom: Spacing.lg }}>
+          <View style={{ flex: 1 }}>
+            <Button title="إضافة دين" variant="danger" fullWidth onPress={() => setShowDebt(true)} />
+          </View>
+          {customer.current_debt > 0 && (
+            <View style={{ flex: 1 }}>
+              <Button title="تسجيل دفعة" variant="success" fullWidth onPress={() => setShowPay(true)} />
+            </View>
+          )}
+        </View>
 
         <Text style={{ fontSize: Fonts.sizes.sm, fontWeight: '700', color: Colors.gray500,
                        textAlign: 'right', marginBottom: Spacing.sm }}>
@@ -251,6 +298,36 @@ export default function CustomerStatementScreen() {
             autoFocus
           />
           <Button title="تأكيد الدفعة" onPress={submitPayment} loading={paying} fullWidth />
+        </View>
+      )}
+
+      {showDebt && (
+        <View style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: Colors.white,
+          borderTopLeftRadius: Radius['2xl'], borderTopRightRadius: Radius['2xl'], padding: Spacing.lg,
+        }}>
+          <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center',
+                         marginBottom: Spacing.md }}>
+            <Text style={{ fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.gray800 }}>إضافة دين</Text>
+            <TouchableOpacity onPress={() => setShowDebt(false)}>
+              <Ionicons name="close" size={22} color={Colors.gray500} />
+            </TouchableOpacity>
+          </View>
+          <Input
+            label="مبلغ الدين ₪ *"
+            value={debtAmount}
+            onChangeText={setDebtAmount}
+            keyboardType="decimal-pad"
+            placeholder="مثال: 50"
+            autoFocus
+          />
+          <Input
+            label="البيان / التفاصيل"
+            value={debtNotes}
+            onChangeText={setDebtNotes}
+            placeholder="مثال: دين نقدي"
+          />
+          <Button title="تأكيد الدين" variant="danger" onPress={submitDebt} loading={addingDebt} fullWidth />
         </View>
       )}
 

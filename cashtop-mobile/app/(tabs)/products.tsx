@@ -9,6 +9,8 @@ import { Input, Badge, EmptyState } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
 import { productsApi, categoriesApi } from '../../src/api';
 import type { Product, Category } from '../../src/types';
+import { isBackendReachable } from '../../src/api/client';
+import { searchProductsCache } from '../../src/db/productsCache';
 
 export default function ProductsScreen() {
   const router = useRouter();
@@ -24,15 +26,31 @@ export default function ProductsScreen() {
   const fetchProducts = useCallback(async (showSpinner = false) => {
     if (showSpinner) setLoading(true);
     try {
-      const data = await productsApi.list({
-        search: search.trim() || undefined,
-        category_id: categoryId,
-        low_stock: lowStockOnly || undefined,
-        limit: 100,
-      });
-      setProducts(data);
+      const isOnline = await isBackendReachable();
+      if (isOnline) {
+        const data = await productsApi.list({
+          search: search.trim() || undefined,
+          category_id: categoryId,
+          low_stock: lowStockOnly || undefined,
+          limit: 100,
+        });
+        setProducts(data);
+      } else {
+        const cached = searchProductsCache(search);
+        let filtered = cached;
+        if (categoryId) filtered = filtered.filter(p => p.category_id === categoryId);
+        if (lowStockOnly) filtered = filtered.filter(p => p.is_low_stock);
+        setProducts(filtered);
+      }
     } catch (e) {
-      // fail silently, keep previous list on screen
+      // fallback to offline
+      try {
+        const cached = searchProductsCache(search);
+        let filtered = cached;
+        if (categoryId) filtered = filtered.filter(p => p.category_id === categoryId);
+        if (lowStockOnly) filtered = filtered.filter(p => p.is_low_stock);
+        setProducts(filtered);
+      } catch (err) {}
     } finally {
       setLoading(false);
       setRefreshing(false);

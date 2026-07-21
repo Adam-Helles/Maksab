@@ -18,6 +18,17 @@ class PaymentEventIn(BaseModel):
 class PaymentPushRequest(BaseModel):
     payments: List[PaymentEventIn]
 
+# ─── ديون يدوية (events) ─────────────────────────────────────────
+class DebtEventIn(BaseModel):
+    id: str  # UUID من الجهاز
+    customer_id: int
+    amount: float
+    notes: Optional[str] = None
+    client_created_at: datetime
+
+class DebtPushRequest(BaseModel):
+    debts: List[DebtEventIn]
+
 
 # ─── تعديل بيانات العميل (last-write-wins آمن، بدون current_debt) ──
 class ProfileUpdateIn(BaseModel):

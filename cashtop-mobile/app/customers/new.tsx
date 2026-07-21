@@ -7,6 +7,8 @@ import { Input, Button } from '../../src/components/ui';
 import { Colors, Fonts, Spacing } from '../../src/types/theme';
 import { customersApi } from '../../src/api';
 import type { Customer } from '../../src/types';
+import { isBackendReachable } from '../../src/api/client';
+import { recordNewCustomerLocal, upsertCustomerCache } from '../../src/db/customerSync';
 
 export default function NewCustomerScreen() {
   const router = useRouter();
@@ -36,10 +38,27 @@ export default function NewCustomerScreen() {
 
     setSaving(true);
     try {
-      const created = await customersApi.create(payload);
-      router.replace({ pathname: '/customers/[id]', params: { id: String(created.id) } });
+      const isOnline = await isBackendReachable();
+      
+      if (isOnline) {
+        const created = await customersApi.create(payload);
+        upsertCustomerCache(created);
+        router.back();
+      } else {
+        const localId = recordNewCustomerLocal({
+          name: payload.name || '',
+          phone: payload.phone || null,
+          phone2: null,
+          email: payload.email || null,
+          address: payload.address || null,
+          notes: null,
+          credit_limit: payload.credit_limit || 0,
+        });
+        Alert.alert('تم الحفظ محلياً 💾', 'لا يوجد اتصال. سيتم مزامنة العميل لاحقاً.');
+        router.back();
+      }
     } catch (err: any) {
-      const detail = err?.response?.data?.detail || 'حدث خطأ أثناء حفظ العميل';
+      const detail = err?.response?.data?.detail || err?.message || 'حدث خطأ أثناء حفظ العميل';
       Alert.alert('تعذر الحفظ', String(detail));
     } finally {
       setSaving(false);

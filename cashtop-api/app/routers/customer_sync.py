@@ -21,6 +21,7 @@ from app.schemas.customer_sync import (
     ProfilePushRequest,
     CustomerPullResponse,
     CustomerSyncOut,
+    DebtPushRequest,
 )
 
 router = APIRouter(prefix="/sync/customers", tags=["🔄 مزامنة العملاء"])
@@ -79,6 +80,112 @@ def push_payments(
         "already_applied": already_applied,
         "rejected_wrong_store": rejected_wrong_store,
     }
+
+
+@router.post("/debts/push")
+def push_debts(
+    payload: DebtPushRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    store_id: int = Depends(get_current_store_id),
+):
+    """
+    إضافة ديون يدوية — يتم تسجيلها كفاتورة آجل (Invoice) مع بند واحد عام.
+    هذا يضمن أن الديون تظهر بشكل صحيح في كشف الحساب والتقارير المالية.
+    """
+    from app.models.invoice import Invoice, InvoiceItem, InvoiceType, InvoiceStatus, PaymentStatus, PaymentMethod
+    from app.models.product import Product
+    import uuid
+
+    accepted = []
+    already_applied = []
+    rejected_wrong_store = []
+
+    # 1. التأكد من وجود "منتج عام" لتسجيل الديون عليه
+    general_product = db.query(Product).filter(
+        Product.store_id == store_id,
+        Product.name == "دين يدوي / عام",
+        Product.is_deleted == False
+    ).first()
+    
+    if not general_product:
+        general_product = Product(
+            store_id=store_id,
+            name="دين يدوي / عام",
+            barcode=str(uuid.uuid4())[:8],
+            category="خدمات",
+            unit_price=0.0,
+            cost_price=0.0,
+            stock_quantity=999999,
+            notes="منتج تلقائي لتسجيل الديون اليدوية للعملاء",
+        )
+        db.add(general_product)
+        db.commit()
+        db.refresh(general_product)
+
+    for debt in payload.debts:
+        # Check if already processed (since we don't have a dedicated table for manual debts, 
+        # we can check if an invoice with this unique_token exists)
+        existing = db.query(Invoice).filter(Invoice.unique_token == debt.id).first()
+        if existing is not None:
+            already_applied.append(debt.id)
+            continue
+
+        customer = db.query(Customer).filter(
+            Customer.id == debt.customer_id,
+            Customer.store_id == store_id,
+        ).first()
+        
+        if customer is None:
+            rejected_wrong_store.append(debt.id)
+            continue
+
+        # Generate a unique invoice number
+        count = db.query(Invoice).filter(Invoice.store_id == store_id).count()
+        inv_number = f"D-{count + 1001}"
+
+        invoice = Invoice(
+            store_id=store_id,
+            invoice_number=inv_number,
+            unique_token=debt.id,
+            invoice_type=InvoiceType.SALE,
+            status=InvoiceStatus.COMPLETED,
+            payment_status=PaymentStatus.UNPAID,
+            payment_method=PaymentMethod.CREDIT,
+            customer_id=debt.customer_id,
+            created_by=_.id,
+            subtotal=debt.amount,
+            total=debt.amount,
+            paid_amount=0.0,
+            remaining_amount=debt.amount,
+            notes=debt.notes or "دين يدوي مسجل من التطبيق",
+            created_at=debt.client_created_at
+        )
+        db.add(invoice)
+        db.flush() # To get invoice ID
+
+        item = InvoiceItem(
+            store_id=store_id,
+            invoice_id=invoice.id,
+            product_id=general_product.id,
+            quantity=1.0,
+            unit_price=debt.amount,
+            cost_price=0.0,
+            total=debt.amount,
+            notes=debt.notes or "دين يدوي"
+        )
+        db.add(item)
+        
+        customer.current_debt = round(customer.current_debt + debt.amount, 2)
+        accepted.append(debt.id)
+
+    db.commit()
+    return {
+        "accepted": accepted,
+        "already_applied": already_applied,
+        "rejected_wrong_store": rejected_wrong_store,
+    }
+
 
 
 @router.post("/profile/push")

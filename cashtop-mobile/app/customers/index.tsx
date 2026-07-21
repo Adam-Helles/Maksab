@@ -7,6 +7,8 @@ import { Input, Badge, EmptyState } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
 import { customersApi } from '../../src/api';
 import type { Customer } from '../../src/types';
+import { isBackendReachable } from '../../src/api/client';
+import { searchCustomersCache, localCustomerToCustomer } from '../../src/db/customerSync';
 
 export default function CustomersScreen() {
   const router = useRouter();
@@ -19,13 +21,25 @@ export default function CustomersScreen() {
   const load = useCallback(async (showSpinner = false) => {
     if (showSpinner) setLoading(true);
     try {
-      const data = await customersApi.list({
-        search: search.trim() || undefined,
-        has_debt: debtOnly || undefined,
-      });
-      setCustomers(data);
+      const isOnline = await isBackendReachable();
+      if (isOnline) {
+        const data = await customersApi.list({
+          search: search.trim() || undefined,
+          has_debt: debtOnly || undefined,
+        });
+        setCustomers(data);
+      } else {
+        let cached = searchCustomersCache(search);
+        if (debtOnly) cached = cached.filter(c => c.current_debt > 0);
+        setCustomers(cached.map(localCustomerToCustomer));
+      }
     } catch {
-      // ignore, keep previous list
+      // ignore, keep previous list or fallback
+      try {
+        let cached = searchCustomersCache(search);
+        if (debtOnly) cached = cached.filter(c => c.current_debt > 0);
+        setCustomers(cached.map(localCustomerToCustomer));
+      } catch {}
     } finally {
       setLoading(false);
       setRefreshing(false);
