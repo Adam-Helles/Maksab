@@ -17,7 +17,7 @@ export default function InvoicesScreen() {
 
   const loadInvoices = async () => {
     try {
-      const data = await invoicesApi.getAll();
+      const data = await invoicesApi.list();
       setInvoices(data);
     } catch (e) {
       console.log(e);
