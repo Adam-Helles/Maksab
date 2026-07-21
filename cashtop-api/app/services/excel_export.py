@@ -69,12 +69,14 @@ def _sales_sheet(ws, db: Session, store_id: int, date_from=None, date_to=None):
 
     ws.title = "المبيعات"
     ws.sheet_view.rightToLeft = True
+    ws.freeze_panes = "A2"  # تجميد صف العناوين
 
-    headers = ["رقم الفاتورة", "التاريخ", "العميل", "الأصناف",
+    headers = ["رقم الفاتورة", "التاريخ", "العميل", "عدد الأصناف",
             "المجموع", "الخصم", "الضريبة", "الإجمالي", "المدفوع", "المتبقي", "الحالة"]
     for col, h in enumerate(headers, 1):
         ws.cell(row=1, column=col, value=h)
     _style_header_row(ws, 1, len(headers))
+    ws.row_dimensions[1].height = 22
 
     q = db.query(Invoice).filter(
         Invoice.store_id == store_id,
@@ -126,13 +128,15 @@ def _inventory_sheet(ws, db: Session, store_id: int):
 
     ws.title = "المخزون"
     ws.sheet_view.rightToLeft = True
+    ws.freeze_panes = "A2"
 
-    headers = ["الاسم", "الباركود", "الصنف", "المخزون (قطعة)",
+    headers = ["اسم المنتج", "الباركود", "الصنف", "المخزون (قطعة)",
             "المخزون (كرتونة)", "سعر التكلفة", "سعر التجزئة",
             "قيمة المخزون", "هامش الربح %", "الحد الأدنى", "الحالة"]
     for col, h in enumerate(headers, 1):
         ws.cell(row=1, column=col, value=h)
     _style_header_row(ws, 1, len(headers))
+    ws.row_dimensions[1].height = 22
 
     products = db.query(Product).filter(
         Product.store_id == store_id,
@@ -178,11 +182,13 @@ def _customer_debts_sheet(ws, db: Session, store_id: int):
 
     ws.title = "ديون العملاء"
     ws.sheet_view.rightToLeft = True
+    ws.freeze_panes = "A2"
 
-    headers = ["اسم العميل", "الجوال", "الدين الحالي", "حد الائتمان", "الرصيد المتاح", "الحالة"]
+    headers = ["اسم العميل", "الجوال", "الدين الحالي ₪", "حد الائتمان ₪", "الرصيد المتاح ₪", "الحالة"]
     for col, h in enumerate(headers, 1):
         ws.cell(row=1, column=col, value=h)
     _style_header_row(ws, 1, len(headers))
+    ws.row_dimensions[1].height = 22
 
     customers = db.query(Customer).filter(
         Customer.store_id == store_id,
@@ -221,11 +227,13 @@ def _supplier_debts_sheet(ws, db: Session, store_id: int):
 
     ws.title = "ديون الموردين"
     ws.sheet_view.rightToLeft = True
+    ws.freeze_panes = "A2"
 
-    headers = ["اسم المورد", "الشركة", "الجوال", "المبلغ المستحق"]
+    headers = ["اسم المورد", "الشركة", "الجوال", "المبلغ المستحق ₪"]
     for col, h in enumerate(headers, 1):
         ws.cell(row=1, column=col, value=h)
     _style_header_row(ws, 1, len(headers))
+    ws.row_dimensions[1].height = 22
 
     suppliers = db.query(Supplier).filter(
         Supplier.store_id == store_id,
