@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import {
+  View, Text, TouchableOpacity, ScrollView, Alert, ActivityIndicator,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Input, Card } from '../../src/components/ui';
-import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
+import { Input } from '../../src/components/ui';
+import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
 import { reportsApi } from '../../src/api/reports';
 import { useIsManager } from '../../src/store/authStore';
 
@@ -20,15 +22,12 @@ export default function ReportsScreen() {
     try {
       await action();
     } catch (e: any) {
-      // client.ts يحوّل كل أخطاء Axios لـ new Error(message) عربي
       const msg = e?.message || 'تعذّر إنشاء الملف';
-
-      // رسالة Render Cold Start تبدأ بـ ⏳
       const isWakingUp = msg.startsWith('⏳');
       Alert.alert(
-        isWakingUp ? '⏳ جاري تشغيل الخادم' : 'خطأ في التقرير',
+        isWakingUp ? '⏳ جاري تشغيل الخادم' : 'خطأ في التصدير',
         isWakingUp
-          ? 'الخادم يستيقظ من وضع السكون (Render المجاني).\n\nانتظر 20-30 ثانية ثم أعد المحاولة.'
+          ? 'الخادم يستيقظ من وضع السكون.\nانتظر 20-30 ثانية ثم أعد المحاولة.'
           : msg,
         [{ text: 'حسناً' }]
       );
@@ -38,13 +37,15 @@ export default function ReportsScreen() {
   };
 
   const from = dateFrom.trim() || undefined;
-  const to = dateTo.trim() || undefined;
+  const to   = dateTo.trim() || undefined;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }} edges={['top']}>
+      {/* Header */}
       <View style={{
         flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between',
-        padding: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.white,
+        padding: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border,
+        backgroundColor: Colors.white,
       }}>
         <Text style={{ fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.primary }}>
           📊 التقارير والتصدير
@@ -54,114 +55,220 @@ export default function ReportsScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={{ padding: Spacing.lg }}>
-        <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.gray500,
-                       textAlign: 'right', marginBottom: Spacing.sm }}>
-          فترة التقرير (اختياري — اتركها فارغة لكل الفترات)
-        </Text>
-        <Card style={{ marginBottom: Spacing.lg }}>
+      <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: 40 }}>
+
+        {/* ─── فترة التقرير ─────────────────────────────────── */}
+        <SectionHeader title="🗓️ فترة التقرير" subtitle="اتركها فارغة لتصدير كل البيانات" />
+        <View style={styles.card}>
           <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
             <View style={{ flex: 1 }}>
-              <Input label="من تاريخ" value={dateFrom} onChangeText={setDateFrom} placeholder="2026-01-01" />
+              <Input label="من تاريخ" value={dateFrom} onChangeText={setDateFrom}
+                     placeholder="2026-01-01" />
             </View>
             <View style={{ flex: 1 }}>
-              <Input label="إلى تاريخ" value={dateTo} onChangeText={setDateTo} placeholder="2026-07-04" />
+              <Input label="إلى تاريخ" value={dateTo} onChangeText={setDateTo}
+                     placeholder="2026-12-31" />
             </View>
           </View>
-        </Card>
+        </View>
 
-        <SectionTitle text="تصدير Excel" />
-        <Card style={{ marginBottom: Spacing.lg, gap: 4 }} padding={0}>
-          <ReportRow
-            icon="apps-outline" label="تقرير شامل" subtitle="مبيعات + مخزون + ديون (4 أوراق)"
-            loading={loadingKey === 'full'} locked={!isManager}
+        {/* ─── تصدير Excel ──────────────────────────────────── */}
+        <SectionHeader
+          title="📗 تصدير Excel"
+          subtitle="ملف Excel منظم بأوراق متعددة — للتحليل والأرشفة"
+          color="#1B6E3E"
+        />
+        <View style={styles.card}>
+          <ExportRow
+            icon="apps-outline"
+            label="تقرير شامل"
+            subtitle="مبيعات + مخزون + ديون العملاء + ديون الموردين (4 أوراق)"
+            color="#1B6E3E"
+            loading={loadingKey === 'full'}
+            locked={!isManager}
             onPress={() => run('full', () => reportsApi.exportExcel('full', from, to))}
           />
           <Divider />
-          <ReportRow
-            icon="cart-outline" label="المبيعات فقط"
+          <ExportRow
+            icon="cart-outline"
+            label="المبيعات فقط"
+            subtitle="جميع الفواتير المكتملة في الفترة المحددة"
+            color="#1B6E3E"
             loading={loadingKey === 'sales'}
             onPress={() => run('sales', () => reportsApi.exportSalesExcel(from, to))}
           />
           <Divider />
-          <ReportRow
-            icon="cube-outline" label="المخزون فقط"
-            loading={loadingKey === 'inventory'} locked={!isManager}
+          <ExportRow
+            icon="cube-outline"
+            label="المخزون فقط"
+            subtitle="قائمة المنتجات مع الكميات والأسعار وقيم المخزون"
+            color="#1B6E3E"
+            loading={loadingKey === 'inventory'}
+            locked={!isManager}
             onPress={() => run('inventory', () => reportsApi.exportInventoryExcel())}
           />
           <Divider />
-          <ReportRow
-            icon="cash-outline" label="الديون فقط"
-            loading={loadingKey === 'debts'} locked={!isManager}
+          <ExportRow
+            icon="cash-outline"
+            label="الديون فقط"
+            subtitle="ديون العملاء + ديون الموردين المستحقة"
+            color="#1B6E3E"
+            loading={loadingKey === 'debts'}
+            locked={!isManager}
             onPress={() => run('debts', () => reportsApi.exportDebtsExcel())}
           />
-        </Card>
+        </View>
 
-        <SectionTitle text="تصدير PDF" />
-        <Card padding={0}>
-          <ReportRow
-            icon="document-text-outline" label="تقرير مبيعات PDF" subtitle="جاهز للطباعة أو المشاركة"
-            loading={loadingKey === 'pdf-sales'} locked={!isManager}
+        {/* ─── تصدير PDF ────────────────────────────────────── */}
+        <SectionHeader
+          title="📕 تصدير PDF"
+          subtitle="ملف PDF جاهز للطباعة أو الإرسال عبر واتساب"
+          color="#8B0000"
+        />
+        <View style={styles.card}>
+          <ExportRow
+            icon="document-text-outline"
+            label="تقرير المبيعات الشامل"
+            subtitle="جميع فواتير الفترة مع الملخص المالي الكامل"
+            color="#8B0000"
+            loading={loadingKey === 'pdf-sales'}
+            locked={!isManager}
             onPress={() => run('pdf-sales', () => reportsApi.exportSalesPdf(from, to))}
           />
-        </Card>
+        </View>
 
-        <Text style={{ fontSize: 12, color: Colors.gray400, textAlign: 'center', marginTop: Spacing.xl }}>
-          فواتير المبيعات الفردية (PDF) تُصدَّر من داخل شاشة تفاصيل كل فاتورة
-        </Text>
+        {/* ─── تلميح ────────────────────────────────────────── */}
+        <View style={styles.tip}>
+          <Ionicons name="information-circle-outline" size={16} color={Colors.primary} />
+          <Text style={styles.tipText}>
+            لتصدير فاتورة مبيعات فردية كـ PDF، افتح تفاصيل الفاتورة من شاشة الفواتير
+          </Text>
+        </View>
+
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function SectionTitle({ text }: { text: string }) {
+// ── مكونات مساعدة ─────────────────────────────────────────
+
+function SectionHeader({ title, subtitle, color }: {
+  title: string; subtitle?: string; color?: string;
+}) {
   return (
-    <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.gray500,
-                   textAlign: 'right', marginBottom: Spacing.sm }}>
-      {text}
-    </Text>
+    <View style={{ marginBottom: Spacing.sm, marginTop: Spacing.lg }}>
+      <Text style={{
+        fontSize: Fonts.sizes.base, fontWeight: '800',
+        color: color || Colors.gray800, textAlign: 'right',
+      }}>
+        {title}
+      </Text>
+      {subtitle && (
+        <Text style={{
+          fontSize: 12, color: Colors.gray400,
+          textAlign: 'right', marginTop: 2,
+        }}>
+          {subtitle}
+        </Text>
+      )}
+    </View>
   );
 }
 
 function Divider() {
-  return <View style={{ height: 1, backgroundColor: Colors.gray100, marginHorizontal: Spacing.lg }} />;
+  return (
+    <View style={{ height: 1, backgroundColor: Colors.gray100, marginHorizontal: Spacing.lg }} />
+  );
 }
 
-function ReportRow({ icon, label, subtitle, onPress, loading, locked }: {
+function ExportRow({
+  icon, label, subtitle, color, onPress, loading, locked,
+}: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   subtitle?: string;
+  color: string;
   onPress: () => void;
   loading?: boolean;
   locked?: boolean;
 }) {
   return (
     <TouchableOpacity
-      onPress={locked ? undefined : onPress}
-      activeOpacity={locked ? 1 : 0.7}
+      onPress={locked ? () => Alert.alert('صلاحيات محدودة', 'هذا التقرير للمدير فقط') : onPress}
+      activeOpacity={0.7}
       style={{
-        flexDirection: 'row-reverse', alignItems: 'center', gap: Spacing.md,
-        paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, opacity: locked ? 0.5 : 1,
+        flexDirection: 'row-reverse', alignItems: 'center',
+        paddingHorizontal: Spacing.lg, paddingVertical: 14,
+        opacity: locked ? 0.55 : 1,
       }}
     >
-      <Ionicons name={icon} size={20} color={Colors.primary} />
+      {/* أيقونة يسار */}
+      <View style={{
+        width: 40, height: 40, borderRadius: Radius.md,
+        backgroundColor: color + '18',
+        alignItems: 'center', justifyContent: 'center', marginLeft: Spacing.md,
+      }}>
+        <Ionicons name={icon} size={20} color={color} />
+      </View>
+
+      {/* نص */}
       <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '600', color: Colors.gray800, textAlign: 'right' }}>
+        <Text style={{
+          fontSize: Fonts.sizes.base, fontWeight: '700',
+          color: Colors.gray800, textAlign: 'right',
+        }}>
           {label}
         </Text>
         {subtitle && (
-          <Text style={{ fontSize: 12, color: Colors.gray400, textAlign: 'right', marginTop: 2 }}>
+          <Text style={{
+            fontSize: 11, color: Colors.gray400,
+            textAlign: 'right', marginTop: 2, lineHeight: 16,
+          }}>
             {subtitle}
           </Text>
         )}
       </View>
-      {loading ? (
-        <ActivityIndicator size="small" color={Colors.primary} />
-      ) : locked ? (
-        <Ionicons name="lock-closed-outline" size={16} color={Colors.gray300} />
-      ) : (
-        <Ionicons name="share-outline" size={18} color={Colors.gray300} />
-      )}
+
+      {/* حالة يمين */}
+      <View style={{
+        width: 32, height: 32, borderRadius: Radius.md,
+        backgroundColor: locked ? Colors.gray100 : color + '12',
+        alignItems: 'center', justifyContent: 'center',
+      }}>
+        {loading ? (
+          <ActivityIndicator size="small" color={color} />
+        ) : locked ? (
+          <Ionicons name="lock-closed-outline" size={15} color={Colors.gray400} />
+        ) : (
+          <Ionicons name="share-outline" size={17} color={color} />
+        )}
+      </View>
     </TouchableOpacity>
   );
 }
+
+const styles = {
+  card: {
+    backgroundColor: Colors.white,
+    borderRadius: Radius.lg,
+    ...Shadow.sm,
+    overflow: 'hidden' as const,
+    marginBottom: Spacing.sm,
+  },
+  tip: {
+    flexDirection: 'row-reverse' as const,
+    alignItems: 'flex-start' as const,
+    gap: 6,
+    backgroundColor: Colors.primaryLight || '#EEF2FF',
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.xl,
+  },
+  tipText: {
+    flex: 1,
+    fontSize: 12,
+    color: Colors.primary,
+    textAlign: 'right' as const,
+    lineHeight: 18,
+  },
+};
