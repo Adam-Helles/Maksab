@@ -32,7 +32,6 @@ def _register_fonts():
         if os.path.exists(_FONT_REGULAR):
             pdfmetrics.registerFont(TTFont("Amiri", _FONT_REGULAR))
         else:
-            # fallback إذا لم يوجد الخط (بيئة تطوير)
             pdfmetrics.registerFont(TTFont("Amiri", "Helvetica"))
     if "Amiri-Bold" not in pdfmetrics.getRegisteredFontNames():
         if os.path.exists(_FONT_BOLD):
@@ -44,16 +43,23 @@ _register_fonts()
 
 
 def _ar(text: str) -> str:
-    """يُعالج النص العربي ليظهر بالاتجاه الصحيح في PDF."""
+    """
+    يُعالج النص العربي ليظهر بالاتجاه الصحيح في ReportLab.
+    ReportLab لا يدعم RTL بشكل أصيل، لذا نستخدم:
+    1. arabic_reshaper: لوصل الأحرف العربية بالشكل الصحيح
+    2. get_display (bidi): لعكس الاتجاه من يمين لشمال
+    """
     if not text:
         return ""
+    text = str(text)
     try:
         import arabic_reshaper
         from bidi.algorithm import get_display
-        reshaped = arabic_reshaper.reshape(str(text))
+        reshaped = arabic_reshaper.reshape(text)
         return get_display(reshaped)
     except Exception:
-        return str(text)
+        # fallback: عكس الكلمات يدوياً على الأقل
+        return " ".join(reversed(text.split()))
 
 
 def _style(name: str, bold: bool = False, **kwargs) -> ParagraphStyle:
@@ -118,19 +124,23 @@ def generate_invoice_pdf(
     elements.append(HRFlowable(width="100%", thickness=1.5, color=PRIMARY))
     elements.append(Spacer(1, 0.4*cm))
 
-    # بيانات الفاتورة
+    # بيانات الفاتورة - عكس الترتيب ليظهر يمين-يسار
     info_data = [
         [_ar("العميل"), _ar(customer_name), _ar("التاريخ"), _ar(inv_date)],
         [_ar("طريقة الدفع"), _ar(method_map.get(invoice.payment_method.value, invoice.payment_method.value)),
          _ar("حالة الدفع"),  _ar(payment_map.get(invoice.payment_status.value, invoice.payment_status.value))],
     ]
-    info_table = Table(info_data, colWidths=[3*cm, 6*cm, 3*cm, 6*cm])
+    info_data_rtl = [row[::-1] for row in info_data]
+    col_w_info = [3*cm, 6*cm, 3*cm, 6*cm][::-1]
+
+    info_table = Table(info_data_rtl, colWidths=col_w_info)
     info_table.setStyle(TableStyle([
         ("FONTNAME",   (0,0), (-1,-1), "Amiri"),
         ("FONTSIZE",   (0,0), (-1,-1), 10),
         ("ALIGN",      (0,0), (-1,-1), "RIGHT"),
-        ("FONTNAME",   (0,0), (0,-1),  "Amiri-Bold"),
-        ("FONTNAME",   (2,0), (2,-1),  "Amiri-Bold"),
+        # تلوين العناوين بخط عريض (بعد العكس صارت العناوين في الأعمدة 1 و 3)
+        ("FONTNAME",   (1,0), (1,-1),  "Amiri-Bold"),
+        ("FONTNAME",   (3,0), (3,-1),  "Amiri-Bold"),
         ("BACKGROUND", (0,0), (-1,-1), LIGHT_BG),
         ("GRID",       (0,0), (-1,-1), 0.5, BORDER),
         ("PADDING",    (0,0), (-1,-1), 7),
@@ -140,28 +150,30 @@ def generate_invoice_pdf(
 
     # ── جدول البنود ──────────────────────────────────────────
     item_headers = [_ar(h) for h in ["#", "المنتج", "الوحدة", "الكمية", "السعر", "الإجمالي"]]
-    item_rows = [item_headers]
+    item_rows = [item_headers[::-1]]
 
     for i, item in enumerate(invoice.items, 1):
         product = db.query(Product).filter(Product.id == item.product_id).first()
         pname   = (product.name if product else "—")
         unit_ar = "قطعة" if item.unit_type == "piece" else "كرتونة"
-        item_rows.append([
+        row = [
             str(i),
             _ar(pname),
             _ar(unit_ar),
             f"{item.quantity:g}",
             f"{item.unit_price:.2f}",
             f"{item.total:.2f}",
-        ])
+        ]
+        item_rows.append(row[::-1])
 
-    col_w = [1*cm, 6*cm, 2.5*cm, 2*cm, 2.5*cm, 3*cm]
-    items_table = Table(item_rows, colWidths=col_w)
+    col_w_items = [1*cm, 6*cm, 2.5*cm, 2*cm, 2.5*cm, 3*cm][::-1]
+    items_table = Table(item_rows, colWidths=col_w_items)
     items_table.setStyle(TableStyle([
         ("FONTNAME",       (0,0), (-1,-1), "Amiri"),
         ("FONTSIZE",       (0,0), (-1,-1), 10),
         ("ALIGN",          (0,0), (-1,-1), "CENTER"),
-        ("ALIGN",          (1,1), (1,-1),  "RIGHT"),
+        # اسم المنتج (كان 1 صار 4 بعد العكس)
+        ("ALIGN",          (4,1), (4,-1),  "RIGHT"),
         ("BACKGROUND",     (0,0), (-1,0),  PRIMARY),
         ("TEXTCOLOR",      (0,0), (-1,0),  WHITE),
         ("FONTNAME",       (0,0), (-1,0),  "Amiri-Bold"),
@@ -182,12 +194,15 @@ def generate_invoice_pdf(
         [_ar("المدفوع"),        f"{invoice.paid_amount:.2f} ₪"],
         [_ar("المتبقي"),        f"{invoice.remaining_amount:.2f} ₪"],
     ]
-    totals_table = Table(totals_data, colWidths=[5*cm, 3.5*cm], hAlign="RIGHT")
+    # نعكس الأعمدة للملخص أيضاً لتظهر الأرقام على اليسار والنص على اليمين
+    totals_data_rtl = [row[::-1] for row in totals_data]
+    totals_table = Table(totals_data_rtl, colWidths=[5*cm, 3.5*cm][::-1])
     totals_table.setStyle(TableStyle([
         ("FONTNAME",   (0,0), (-1,-1), "Amiri"),
         ("FONTSIZE",   (0,0), (-1,-1), 10),
-        ("ALIGN",      (0,0), (0,-1),  "RIGHT"),
-        ("ALIGN",      (1,0), (1,-1),  "LEFT"),
+        # بعد العكس: العمود 1 هو النص العربي (يمين)، والعمود 0 هو الرقم (يسار)
+        ("ALIGN",      (1,0), (1,-1),  "RIGHT"),
+        ("ALIGN",      (0,0), (0,-1),  "LEFT"),
         ("GRID",       (0,0), (-1,-1), 0.5, BORDER),
         ("BACKGROUND", (0,3), (-1,3),  PRIMARY),
         ("TEXTCOLOR",  (0,3), (-1,3),  WHITE),
@@ -197,6 +212,8 @@ def generate_invoice_pdf(
         ("TEXTCOLOR",  (0,5), (-1,5),  RED_TEXT),
         ("PADDING",    (0,0), (-1,-1), 7),
     ]))
+    # دفع الجدول لليسار (أو اليمين)
+    totals_table.hAlign = 'LEFT'
     elements.append(totals_table)
 
     if invoice.notes:
@@ -257,13 +274,13 @@ def generate_sales_pdf(
 
     status_map = {"paid": "مدفوعة ✅", "partial": "جزئي", "unpaid": "آجل"}
     headers = [_ar(h) for h in ["رقم الفاتورة", "التاريخ", "العميل", "الإجمالي", "المدفوع", "المتبقي", "الحالة"]]
-    rows = [headers]
+    rows = [headers[::-1]]
 
     total_sales = total_paid = total_remaining = 0.0
     for inv in invoices:
         cust      = inv.customer.name if inv.customer else "نقدي"
         status_ar = status_map.get(inv.payment_status.value, inv.payment_status.value)
-        rows.append([
+        row = [
             inv.invoice_number,
             inv.created_at.strftime("%Y-%m-%d"),
             _ar(cust),
@@ -271,20 +288,22 @@ def generate_sales_pdf(
             f"{inv.paid_amount:.2f}",
             f"{inv.remaining_amount:.2f}",
             _ar(status_ar),
-        ])
+        ]
+        rows.append(row[::-1])
         total_sales     += inv.total
         total_paid      += inv.paid_amount
         total_remaining += inv.remaining_amount
 
     # صف الإجماليات
-    rows.append([
+    total_row = [
         _ar("الإجمالي"), "", "",
         f"{total_sales:.2f}",
         f"{total_paid:.2f}",
         f"{total_remaining:.2f}", "",
-    ])
+    ]
+    rows.append(total_row[::-1])
 
-    col_w = [3.5*cm, 2.5*cm, 3.5*cm, 2.5*cm, 2.5*cm, 2.5*cm, 2*cm]
+    col_w = [3.5*cm, 2.5*cm, 3.5*cm, 2.5*cm, 2.5*cm, 2.5*cm, 2*cm][::-1]
     t = Table(rows, colWidths=col_w, repeatRows=1)
     t.setStyle(TableStyle([
         ("FONTNAME",       (0,0), (-1,-1), "Amiri"),

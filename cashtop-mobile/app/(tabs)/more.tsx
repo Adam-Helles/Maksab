@@ -82,6 +82,10 @@ export default function MoreScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>التقارير والتصدير</Text>
           <Card padding={0}>
+            <MenuItem icon="🧾" label="سجل الفواتير"
+              subtitle="عرض الفواتير السابقة وتصديرها"
+              onPress={() => router.push('/invoices')} />
+            <View style={styles.divider} />
             <MenuItem icon="📊" label="التقارير والتصدير"
               subtitle="Excel • PDF • فواتير"
               onPress={() => router.push('/reports')} />
