@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,17 +8,40 @@ import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
 import { dashboardApi } from '../../src/api';
 import type { DashboardSummary } from '../../src/types';
 
+import { financeApi } from '../../src/api/reports';
+
 export default function FinanceScreen() {
   const router = useRouter();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [repairing, setRepairing] = useState(false);
 
-  useEffect(() => {
-    dashboardApi.summary()
-      .then(setSummary)
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      // أعد حساب الأرصدة أولاً قبل جلب الملخص
+      await financeApi.repairDebts().catch(() => {});
+      const data = await dashboardApi.summary();
+      setSummary(data);
+    } catch {}
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  const handleRepair = async () => {
+    setRepairing(true);
+    try {
+      const result = await financeApi.repairDebts();
+      const data   = await dashboardApi.summary();
+      setSummary(data);
+      Alert.alert('تم الإصلاح ✅', `تم تصحيح ${result.fixed_count} رصيد عميل من الفواتير الفعلية`);
+    } catch {
+      Alert.alert('خطأ', 'تعذّر إصلاح الأرصدة، تحقق من الاتصال بالسيرفر');
+    } finally {
+      setRepairing(false);
+    }
+  };
 
   const f = summary?.finance;
 
@@ -85,6 +108,22 @@ export default function FinanceScreen() {
             <QuickLink icon="cube-outline" label="عرض مستحقات الموردين" onPress={() => router.push('/suppliers')} />
             <Divider />
             <QuickLink icon="download-outline" label="تصدير تقرير الديون" onPress={() => router.push('/reports')} />
+            <Divider />
+            <TouchableOpacity
+              onPress={handleRepair}
+              disabled={repairing}
+              style={{
+                flexDirection: 'row-reverse', alignItems: 'center', gap: Spacing.md,
+                padding: Spacing.lg, opacity: repairing ? 0.5 : 1,
+              }}
+            >
+              {repairing
+                ? <ActivityIndicator size="small" color={Colors.warning} />
+                : <Ionicons name="refresh-outline" size={20} color={Colors.warning} />}
+              <Text style={{ flex: 1, fontWeight: '600', color: Colors.warning, textAlign: 'right' }}>
+                إصلاح أرصدة الديون تلقائياً
+              </Text>
+            </TouchableOpacity>
           </Card>
         </ScrollView>
       )}

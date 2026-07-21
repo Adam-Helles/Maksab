@@ -167,17 +167,19 @@ def customer_statement(
 
     for inv in invoices:
         if inv.invoice_type == InvoiceType.SALE:
+            # مدين: قيمة الفاتورة كاملة
             running_balance += inv.total
+            # دائن فوري: ما دُفع وقت الفاتورة
+            running_balance -= inv.paid_amount
             transactions.append({
                 "date"            : inv.created_at.strftime("%Y-%m-%d"),
                 "type"            : "فاتورة بيع",
                 "reference"       : inv.invoice_number,
-                "debit"           : inv.total,
-                "credit"          : 0,
-                "paid_on_invoice" : inv.paid_amount,
-                "balance"         : round(running_balance - inv.paid_amount, 2),
+                "debit"           : round(inv.total, 2),
+                "credit"          : round(inv.paid_amount, 2),
+                "paid_on_invoice" : round(inv.paid_amount, 2),
+                "balance"         : round(running_balance, 2),
             })
-            running_balance -= inv.paid_amount
 
         elif inv.invoice_type == InvoiceType.SALE_RETURN:
             running_balance -= inv.total
@@ -186,7 +188,7 @@ def customer_statement(
                 "type"      : "مرتجع بيع",
                 "reference" : inv.invoice_number,
                 "debit"     : 0,
-                "credit"    : inv.total,
+                "credit"    : round(inv.total, 2),
                 "balance"   : round(running_balance, 2),
             })
 
@@ -195,10 +197,12 @@ def customer_statement(
         "customer_name" : customer.name,
         "phone"         : customer.phone,
         "credit_limit"  : customer.credit_limit,
-        "current_debt"  : customer.current_debt,
+        "current_debt"  : round(running_balance, 2),  # الرصيد المحسوب من الفواتير
+        "stored_debt"   : customer.current_debt,       # الرصيد المخزّن في قاعدة البيانات
         "can_buy"       : customer.can_buy_on_credit,
         "transactions"  : transactions,
     }
+
 
 
 @router.post("/customers/{customer_id}/pay", response_model=DebtPaymentResponse, summary="تسجيل دفعة من عميل")
@@ -417,3 +421,51 @@ def profit_report(
         "net_profit"      : round(net_profit,     2),
         "profit_margin"   : margin,
     }
+
+
+# ══════════════════════════════════════════════════════════
+#  إصلاح أرصدة الديون (recalculate from invoices)
+# ══════════════════════════════════════════════════════════
+
+@router.post("/repair-debts", summary="إعادة حساب أرصدة ديون العملاء من الفواتير")
+def repair_customer_debts(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_manager_or_above),
+    store_id: int = Depends(get_current_store_id),
+):
+    """
+    يُعيد حساب current_debt لكل عميل من مجموع remaining_amount
+    للفواتير المكتملة غير المسددة — يُصلح أي تباين بين القيمة المخزنة
+    والفواتير الفعلية.
+    """
+    customers = db.query(Customer).filter(
+        Customer.store_id == store_id,
+        Customer.is_deleted == False,
+    ).all()
+
+    fixed = []
+    for customer in customers:
+        real_debt = db.query(
+            func.coalesce(func.sum(Invoice.remaining_amount), 0.0)
+        ).filter(
+            Invoice.customer_id == customer.id,
+            Invoice.store_id == store_id,
+            Invoice.invoice_type == InvoiceType.SALE,
+            Invoice.status == InvoiceStatus.COMPLETED,
+            Invoice.remaining_amount > 0,
+        ).scalar()
+
+        real_debt = round(real_debt or 0.0, 2)
+        if abs(customer.current_debt - real_debt) > 0.001:
+            fixed.append({
+                "customer_id": customer.id,
+                "old_debt": customer.current_debt,
+                "new_debt": real_debt,
+            })
+            customer.current_debt = real_debt
+
+    db.commit()
+    return {
+        "fixed_count": len(fixed),
+        "fixed": fixed,
+    }

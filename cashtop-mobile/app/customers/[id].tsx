@@ -214,21 +214,32 @@ export default function CustomerStatementScreen() {
 
       <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: 100 }}>
         <Card style={{ marginBottom: Spacing.lg }}>
-          <Text style={{ fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.gray800, textAlign: 'right' }}>
-            {customer.name}
-          </Text>
+          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.gray800, textAlign: 'right', flex: 1 }}>
+              {customer.name}
+            </Text>
+            <TouchableOpacity onPress={load} style={{ padding: 6 }}>
+              <Ionicons name="refresh-outline" size={20} color={Colors.primary} />
+            </TouchableOpacity>
+          </View>
           {!!customer.phone && (
             <Text style={{ fontSize: 13, color: Colors.gray400, textAlign: 'right', marginTop: 2 }}>
               {customer.phone}
             </Text>
           )}
 
-          <View style={{ flexDirection: 'row-reverse', gap: 8, marginTop: Spacing.md, flexWrap: 'wrap' }}>
-            {customer.current_debt > 0
-              ? <Badge label={`دين حالي: ${customer.current_debt.toFixed(2)} ₪`} color="red" />
-              : <Badge label="لا يوجد دين" color="green" />}
-            <Badge label={`حد الائتمان: ${customer.credit_limit.toFixed(0)} ₪`} color="gray" />
-          </View>
+          {/* الدين الحقيقي المحسوب من الفواتير (يُقدَّم على الكاش المحلي) */}
+          {(() => {
+            const realDebt = statement?.current_debt ?? customer.current_debt;
+            return (
+              <View style={{ flexDirection: 'row-reverse', gap: 8, marginTop: Spacing.md, flexWrap: 'wrap' }}>
+                {realDebt > 0
+                  ? <Badge label={`دين حالي: ${Number(realDebt).toFixed(2)} ₪`} color="red" />
+                  : <Badge label="لا يوجد دين" color="green" />}
+                <Badge label={`حد الائتمان: ${customer.credit_limit.toFixed(0)} ₪`} color="gray" />
+              </View>
+            );
+          })()}
         </Card>
 
         <View style={{ flexDirection: 'row-reverse', gap: Spacing.md, marginBottom: Spacing.lg }}>

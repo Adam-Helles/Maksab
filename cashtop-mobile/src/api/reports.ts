@@ -56,3 +56,11 @@ export const reportsApi = {
     await saveAndShareFile(data, `sales_report_${todayStamp()}.pdf`, PDF_MIME);
   },
 };
+
+// مُصدَّر منفرداً لأنه يخص المالية لا التقارير
+export const financeApi = {
+  repairDebts: async (): Promise<{ fixed_count: number; fixed: any[] }> => {
+    const { data } = await api.post('/finance/repair-debts');
+    return data;
+  },
+};
