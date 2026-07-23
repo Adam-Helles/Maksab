@@ -94,7 +94,6 @@ def export_debts_excel(
 @router.get("/pdf/invoice/{invoice_id}", summary="تصدير فاتورة PDF")
 def export_invoice_pdf(
     invoice_id: int,
-    shop_name: str = Query("CashTop", description="اسم المحل"),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
     store_id: int = Depends(get_current_store_id),
@@ -105,7 +104,7 @@ def export_invoice_pdf(
     مستخدم يبدّل invoice_id بالرابط ويصدّر فاتورة تاجر تاني.
     """
     try:
-        pdf_bytes = generate_invoice_pdf(db, invoice_id, store_id, shop_name)
+        pdf_bytes = generate_invoice_pdf(db, invoice_id, store_id)
     except ValueError as e:
         raise HTTPException(404, str(e))
 
@@ -120,12 +119,11 @@ def export_invoice_pdf(
 def export_sales_pdf(
     date_from:  Optional[date] = None,
     date_to:    Optional[date] = None,
-    shop_name:  str = Query("CashTop", description="اسم المحل"),
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
     store_id: int = Depends(get_current_store_id),
 ):
-    pdf_bytes = generate_sales_pdf(db, store_id, date_from, date_to, shop_name)
+    pdf_bytes = generate_sales_pdf(db, store_id, date_from, date_to)
     today = date.today().strftime("%Y%m%d")
     return StreamingResponse(
         io.BytesIO(pdf_bytes),

@@ -63,6 +63,31 @@ def list_keys(
     return db.query(LicenseKey).order_by(LicenseKey.id.desc()).all()
 
 
+@router.get("/status", summary="حالة اشتراك المتجر")
+def license_status(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user)
+):
+    from datetime import datetime, timezone
+    store = db.query(Store).filter(Store.id == user.store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="المتجر غير موجود")
+    
+    now = datetime.now(timezone.utc)
+    days_until_expiry = None
+    if store.subscription_expires_at:
+        delta = store.subscription_expires_at - now
+        days_until_expiry = max(0, delta.days)
+        
+    return {
+        "store_id": store.id,
+        "is_active": store.is_active,
+        "subscription_expires_at": store.subscription_expires_at,
+        "days_until_expiry": days_until_expiry,
+        "server_time": now
+    }
+
+
 @router.post("/activate", summary="تفعيل وتمديد الاشتراك باستخدام مفتاح")
 def activate_license(
     data: LicenseKeyActivateRequest,

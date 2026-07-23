@@ -86,10 +86,13 @@ def generate_invoice_pdf(
     db: Session,
     invoice_id: int,
     store_id: int,
-    shop_name: str = "مكسب",
 ) -> bytes:
     from app.models.invoice import Invoice
     from app.models.product import Product
+    from app.models.settings import StoreSettings
+
+    settings = db.query(StoreSettings).filter(StoreSettings.store_id == store_id).first()
+    shop_name = settings.store_name if settings and settings.store_name else "مكسب"
 
     invoice = db.query(Invoice).filter(
         Invoice.id == invoice_id,
@@ -238,10 +241,13 @@ def generate_sales_pdf(
     store_id: int,
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
-    shop_name: str = "مكسب",
 ) -> bytes:
     from app.models.invoice import Invoice, InvoiceType, InvoiceStatus
+    from app.models.settings import StoreSettings
     from sqlalchemy import func
+
+    settings = db.query(StoreSettings).filter(StoreSettings.store_id == store_id).first()
+    shop_name = settings.store_name if settings and settings.store_name else "مكسب"
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(

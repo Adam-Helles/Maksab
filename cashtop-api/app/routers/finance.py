@@ -320,6 +320,79 @@ def supplier_debts(
     }
 
 
+@router.get("/suppliers/{supplier_id}/statement", summary="كشف حساب مورد")
+def supplier_statement(
+    supplier_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    store_id: int = Depends(get_current_store_id),
+):
+    from app.models.invoice import Invoice, InvoiceType, Payment
+    supplier = db.query(Supplier).filter(
+        Supplier.id == supplier_id, Supplier.store_id == store_id
+    ).first()
+    if not supplier:
+        raise HTTPException(404, "المورد غير موجود")
+
+    # 1) الفواتير
+    invoices = db.query(Invoice).filter(
+        Invoice.supplier_id == supplier_id,
+        Invoice.store_id == store_id,
+        Invoice.status != "cancelled"
+    ).order_by(Invoice.created_at.asc()).all()
+
+    transactions = []
+    
+    for inv in invoices:
+        if inv.invoice_type == InvoiceType.PURCHASE:
+            transactions.append({
+                "date": inv.created_at.strftime("%Y-%m-%d %H:%M"),
+                "timestamp": inv.created_at.timestamp(),
+                "type": "فاتورة مشتريات",
+                "reference": inv.invoice_number,
+                "debit": round(inv.paid_amount, 2),  # مدفوع
+                "credit": round(inv.total, 2),       # مستحق للمورد
+            })
+            for p in inv.payments:
+                if p.created_at > inv.created_at:
+                    transactions.append({
+                        "date": p.created_at.strftime("%Y-%m-%d %H:%M"),
+                        "timestamp": p.created_at.timestamp(),
+                        "type": "دفعة نقدية",
+                        "reference": f"سداد {inv.invoice_number}",
+                        "debit": round(p.amount, 2),
+                        "credit": 0.0,
+                    })
+
+        elif inv.invoice_type == InvoiceType.PURCHASE_RETURN:
+            transactions.append({
+                "date": inv.created_at.strftime("%Y-%m-%d %H:%M"),
+                "timestamp": inv.created_at.timestamp(),
+                "type": "مرتجع مشتريات",
+                "reference": inv.invoice_number,
+                "debit": round(inv.total, 2),
+                "credit": 0.0,
+            })
+
+    transactions.sort(key=lambda x: x["timestamp"])
+    
+    final_balance = 0.0
+    for t in transactions:
+        final_balance += t["credit"] - t["debit"]
+        t["balance"] = round(final_balance, 2)
+        del t["timestamp"]
+
+    return {
+        "supplier_id": supplier.id,
+        "supplier_name": supplier.name,
+        "phone": supplier.phone,
+        "company": supplier.company,
+        "current_debt": round(final_balance, 2),
+        "stored_debt": supplier.balance,
+        "transactions": transactions,
+    }
+
+
 @router.post("/suppliers/{supplier_id}/pay", response_model=DebtPaymentResponse, summary="تسجيل دفعة لمورد")
 def supplier_pay_debt(
     supplier_id: int,
