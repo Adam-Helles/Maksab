@@ -58,8 +58,8 @@ app = FastAPI(
     version=settings.APP_VERSION,
     description="نظام إدارة المحل والمحاسبة المتكاملة",
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
 )
 
 # Rate Limiting
