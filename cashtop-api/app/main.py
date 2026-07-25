@@ -1,4 +1,7 @@
 from contextlib import asynccontextmanager
+import asyncio
+from datetime import datetime
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
@@ -9,6 +12,12 @@ from app.database import engine, Base, SessionLocal
 from app.core.limiter import limiter
 from app.models import *  # noqa — يُهيء الجداول
 
+if settings.SENTRY_DSN:
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        traces_sample_rate=1.0,
+        profiles_sample_rate=1.0,
+    )
 
 # ─── Create Tables & Seed Admin ───────────────────────────
 def create_tables():
@@ -49,7 +58,27 @@ def seed_admin():
 async def lifespan(app: FastAPI):
     create_tables()
     seed_admin()
+    
+    # Background task للقيام بتنظيف التوكنز القديمة
+    task = asyncio.create_task(cleanup_expired_tokens())
     yield
+    task.cancel()
+
+async def cleanup_expired_tokens():
+    from app.models.refresh_token import RefreshToken
+    while True:
+        try:
+            db = SessionLocal()
+            cutoff = datetime.utcnow()
+            db.query(RefreshToken).filter(
+                (RefreshToken.expires_at < cutoff) | (RefreshToken.is_revoked == True)
+            ).delete()
+            db.commit()
+            db.close()
+        except Exception:
+            pass
+        # Sleep for 24 hours
+        await asyncio.sleep(86400)
 
 
 # ─── App ──────────────────────────────────────────────────

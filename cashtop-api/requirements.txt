@@ -17,3 +17,5 @@ reportlab==4.2.2
 slowapi==0.1.9
 arabic-reshaper==3.0.0
 python-bidi==0.4.2
+
+sentry-sdk[fastapi]>=2.0.0

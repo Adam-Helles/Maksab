@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = "1.0.0"
     DEBUG: bool = True
     ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:8081"
+    SENTRY_DSN: str | None = None
 
     # Admin seed
     ADMIN_USERNAME: str = "admin"
