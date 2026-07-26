@@ -18,6 +18,7 @@ import {
 } from '../../src/db/productsCache';
 import { recordOfflineSaleLocal, syncOfflineSales, getPendingOfflineSalesCount } from '../../src/db/offlineSales';
 import { runCustomerSync } from '../../src/db/customerSync';
+import { runSupplierSync } from '../../src/db/supplierSync';
 
 const PAYMENT_OPTIONS: { value: PaymentMethod; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { value: 'cash',     label: 'نقدي',   icon: 'cash-outline' },
@@ -64,6 +65,7 @@ export default function POSScreen() {
       if (online) {
         refreshProductsCache().catch(() => {});
         runCustomerSync().catch(() => {});
+        runSupplierSync().catch(() => {});
 
         syncOfflineSales()
           .then((result) => {

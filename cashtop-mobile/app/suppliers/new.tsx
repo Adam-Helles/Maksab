@@ -5,7 +5,7 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Input, Button } from '../../src/components/ui';
 import { Colors, Fonts, Spacing } from '../../src/types/theme';
-import { suppliersApi } from '../../src/api';
+import { recordNewSupplierLocal } from '../../src/db/supplierSync';
 
 export default function NewSupplierScreen() {
   const router = useRouter();
@@ -14,34 +14,26 @@ export default function NewSupplierScreen() {
   const [company, setCompany] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [address, setAddress] = useState('');
-  const [taxNumber, setTaxNumber] = useState('');
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState('');
 
-  const handleSubmit = async () => {
+  const handleSubmit = () => {
     if (!name.trim()) {
       setNameError('اسم المورد مطلوب');
       return;
     }
     setNameError('');
-
-    const payload = {
-      name: name.trim(),
-      company: company.trim() || undefined,
-      phone: phone.trim() || undefined,
-      email: email.trim() || undefined,
-      address: address.trim() || undefined,
-      tax_number: taxNumber.trim() || undefined,
-    };
-
     setSaving(true);
     try {
-      await suppliersApi.create(payload);
+      recordNewSupplierLocal({
+        name: name.trim(),
+        company: company.trim() || undefined,
+        phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
+      });
       router.replace('/suppliers');
     } catch (err: any) {
-      const detail = err?.response?.data?.detail || 'حدث خطأ أثناء حفظ المورد';
-      Alert.alert('تعذر الحفظ', String(detail));
+      Alert.alert('خطأ', 'حدث خطأ أثناء الحفظ');
     } finally {
       setSaving(false);
     }
@@ -63,6 +55,12 @@ export default function NewSupplierScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: Spacing.lg }} keyboardShouldPersistTaps="handled">
+        <View style={{ backgroundColor: Colors.info + '20', padding: Spacing.md, borderRadius: 8, marginBottom: Spacing.lg }}>
+          <Text style={{ color: Colors.info, textAlign: 'right', fontSize: 13, fontWeight: '600' }}>
+            📶 سيتم حفظ المورد محلياً ومزامنته تلقائياً عند توفر الإنترنت
+          </Text>
+        </View>
+
         <Input
           label="اسم المورد *"
           placeholder="مثال: شركة النور للتوزيع"
@@ -93,20 +91,6 @@ export default function NewSupplierScreen() {
           onChangeText={setEmail}
           keyboardType="email-address"
           autoCapitalize="none"
-        />
-
-        <Input
-          label="العنوان"
-          placeholder="اختياري"
-          value={address}
-          onChangeText={setAddress}
-        />
-
-        <Input
-          label="الرقم الضريبي"
-          placeholder="اختياري"
-          value={taxNumber}
-          onChangeText={setTaxNumber}
         />
 
         <Button

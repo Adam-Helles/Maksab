@@ -56,7 +56,7 @@ export default function InvoicesScreen() {
             <Text style={{ textAlign: 'center', color: Colors.gray400, marginTop: 40 }}>لا توجد فواتير سابقة</Text>
           ) : (
             invoices.map(inv => (
-              <View key={inv.id} style={{
+              <TouchableOpacity key={inv.id} onPress={() => router.push(`/invoices/${inv.id}`)} style={{
                 backgroundColor: Colors.white, borderRadius: Radius.lg, ...Shadow.sm,
                 padding: Spacing.md, marginBottom: Spacing.md,
                 flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center'
@@ -87,7 +87,7 @@ export default function InvoicesScreen() {
                     </TouchableOpacity>
                   )}
                 </View>
-              </View>
+              </TouchableOpacity>
             ))
           )}
         </ScrollView>

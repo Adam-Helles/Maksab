@@ -27,6 +27,8 @@ interface AuthState {
   clearError:    () => void;
   setSubscriptionExpired: (expired: boolean) => void;
   isSubscriptionExpired: boolean;
+  daysUntilExpiry: number | null;
+  fetchSubscriptionStatus: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -35,7 +37,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isLoading:       true,   // true عند بدء التطبيق
   error:           null,
   isSubscriptionExpired: false,
+  daysUntilExpiry: null,
   setSubscriptionExpired: (expired: boolean) => set({ isSubscriptionExpired: expired }),
+  
+  fetchSubscriptionStatus: async () => {
+    try {
+      const data = await authApi.getLicenseStatus(); 
+      if (data.days_until_expiry !== undefined && data.days_until_expiry !== null) {
+        set({ 
+          daysUntilExpiry: data.days_until_expiry,
+          isSubscriptionExpired: data.days_until_expiry <= 0 || !data.is_active
+        });
+      }
+    } catch (e) {
+      // Ignore network errors for this status check
+    }
+  },
 
   // ── تسجيل الدخول ──────────────────────────────────────
   login: async (username, password) => {
@@ -51,6 +68,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
         error: null,
       });
+      get().fetchSubscriptionStatus();
     } catch (err: any) {
       // client.ts يحوّل كل أخطاء Axios لـ new Error(message) عربي —
       // الرسالة موجودة في err.message مباشرة وليس في err.response.data.detail
@@ -109,12 +127,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // 1. الدخول فوراً باستخدام البيانات المحلية (Offline-First)
       // يضمن أن التطبيق يفتح فوراً بدون إنترنت، ويتجاوز شاشة الدخول بنجاح.
       set({ user: localUser, isAuthenticated: true, isLoading: false });
+      get().fetchSubscriptionStatus();
 
       // 2. تحديث بيانات المستخدم في الخلفية (إذا كان متصلاً)
       try {
         const user = await authApi.me();
         await TokenStorage.setUser(user); // تحديث الكاش المحلي
         set({ user });
+        get().fetchSubscriptionStatus();
       } catch (err: any) {
         // إذا كان الخطأ 401 (التوكن منتهي أو غير صالح)، نقوم بتسجيل الخروج.
         // أما أخطاء الشبكة (Timeout, 500, Offline) فنتجاهلها ليبقى المستخدم مسجلاً.

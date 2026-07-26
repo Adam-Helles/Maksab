@@ -101,6 +101,8 @@ export default function MoreScreen() {
                 onPress={() => router.push('/users')} />
               <View style={styles.divider} />
               <MenuItem icon="⚙️" label="إعدادات النظام" onPress={() => router.push('/settings')} />
+              <View style={styles.divider} />
+              <MenuItem icon="🔑" label="الاشتراك والتفعيل" subtitle="تجديد أو إدخال مفتاح التفعيل" onPress={() => router.push('/settings/activation')} />
             </Card>
           </View>
         )}

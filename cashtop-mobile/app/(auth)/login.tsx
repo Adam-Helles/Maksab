@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, KeyboardAvoidingView,
-  Platform, ScrollView, Pressable,
+  Platform, ScrollView, Pressable, Modal
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../../src/store/authStore';
 import { Button, Input } from '../../src/components/ui';
 import { Colors, Spacing, Radius, Fonts } from '../../src/types/theme';
+import { setServerIp, BASE_URL } from '../../src/api/client';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -17,7 +19,14 @@ export default function LoginScreen() {
   const [showPass,  setShowPass] = useState(false);
   const [errors,    setErrors]   = useState<{ username?: string; password?: string }>({});
 
+  const [showConfig, setShowConfig] = useState(false);
+  const [serverIp, setServerIpInput] = useState('');
+
   const { login, isLoading, error, clearError } = useAuthStore();
+
+  useEffect(() => {
+    // تم إلغاء التحكم بالـ IP لأن الرابط الآن ثابت
+  }, []);
 
   const validate = () => {
     const e: typeof errors = {};
@@ -39,6 +48,8 @@ export default function LoginScreen() {
     }
   };
 
+  // تم إزالة وظيفة حفظ الـ IP
+
   return (
     <LinearGradient
       colors={['#1E3A5F', '#2D5187', '#1E3A5F']}
@@ -55,6 +66,8 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
+
+
           {/* ── Logo ─────────────────────────────────────── */}
           <View style={styles.logoSection}>
             <View style={styles.logoCircle}>
@@ -128,6 +141,7 @@ export default function LoginScreen() {
           <Text style={styles.footer}>v1.0.0 © 2025 Maksab</Text>
         </ScrollView>
       </KeyboardAvoidingView>
+
     </LinearGradient>
   );
 }
@@ -135,7 +149,8 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   gradient:     { flex: 1 },
   scroll:       { flexGrow: 1, justifyContent: 'center', padding: Spacing.xl },
-  logoSection:  { alignItems: 'center', marginBottom: Spacing['3xl'] },
+  configBtn:    { position: 'absolute', top: 50, right: 20, zIndex: 10, padding: 8 },
+  logoSection:  { alignItems: 'center', marginBottom: Spacing['3xl'], marginTop: 20 },
   logoCircle:   {
     width: 90, height: 90, borderRadius: 45,
     backgroundColor: 'rgba(255,255,255,0.15)',
@@ -172,4 +187,8 @@ const styles = StyleSheet.create({
   signupLinkText: { fontSize: 13, color: Colors.primary, fontWeight: '700' },
 
   footer:       { textAlign: 'center', color: 'rgba(255,255,255,0.4)', marginTop: Spacing.xl, fontSize: 12 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: Spacing.xl },
+  modalContent: { backgroundColor: Colors.white, borderRadius: Radius.xl, padding: Spacing.xl },
+  modalTitle:   { fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.gray800, textAlign: 'right', marginBottom: 4 },
+  modalSub:     { fontSize: 13, color: Colors.gray500, textAlign: 'right', marginBottom: Spacing.lg },
 });

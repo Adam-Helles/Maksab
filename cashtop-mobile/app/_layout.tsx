@@ -6,18 +6,22 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useAuthStore } from '../src/store/authStore';
 import { initDatabase } from '../src/db/database';
 import { initCustomerTables } from '../src/db/customerSync';
+import { initSupplierTables } from '../src/db/supplierSync';
 import { initProductsCache } from '../src/db/productsCache';
 import { initOfflineSalesTable } from '../src/db/offlineSales';
+import { initApiConfig } from '../src/api/client';
 
 export default function RootLayout() {
-  const { isAuthenticated, isLoading, restoreSession } = useAuthStore();
+  const { isAuthenticated, isLoading, restoreSession, isSubscriptionExpired, daysUntilExpiry } = useAuthStore();
   const router  = useRouter();
   const segments = useSegments();
 
   // تهيئة قاعدة البيانات المحلية (SQLite) عند بدء التطبيق
   useEffect(() => {
+    initApiConfig();
     initDatabase();
     initCustomerTables();
+    initSupplierTables();
     initProductsCache();
     initOfflineSalesTable();
   }, []);
@@ -43,11 +47,21 @@ export default function RootLayout() {
       <StatusBar style="light" backgroundColor="#1E3A5F" />
       
       {/* Subscription Expired Banner */}
-      {isAuthenticated && useAuthStore.getState().isSubscriptionExpired && (
+      {isAuthenticated && isSubscriptionExpired && (
         <View style={{ backgroundColor: '#EF4444', padding: 10, paddingTop: 40, alignItems: 'center' }}>
           <Text style={{ color: 'white', fontWeight: 'bold' }}>انتهى الاشتراك! لا يمكنك إضافة بيانات جديدة.</Text>
           <TouchableOpacity onPress={() => router.push('/settings/activation')} style={{ marginTop: 5, backgroundColor: 'white', paddingHorizontal: 15, paddingVertical: 5, borderRadius: 5 }}>
             <Text style={{ color: '#EF4444', fontWeight: 'bold' }}>تجديد الآن</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Subscription Expiring Soon Banner */}
+      {isAuthenticated && !isSubscriptionExpired && daysUntilExpiry !== null && daysUntilExpiry <= 3 && (
+        <View style={{ backgroundColor: '#F59E0B', padding: 10, paddingTop: 40, alignItems: 'center' }}>
+          <Text style={{ color: 'white', fontWeight: 'bold' }}>تنبيه: سينتهي الاشتراك خلال {daysUntilExpiry} أيام.</Text>
+          <TouchableOpacity onPress={() => router.push('/settings/activation')} style={{ marginTop: 5, backgroundColor: 'white', paddingHorizontal: 15, paddingVertical: 5, borderRadius: 5 }}>
+            <Text style={{ color: '#F59E0B', fontWeight: 'bold' }}>تجديد مبكر</Text>
           </TouchableOpacity>
         </View>
       )}

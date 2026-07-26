@@ -50,6 +50,11 @@ export const productsApi = {
     const { data } = await api.get<Product[]>('/inventory/alerts/low-stock');
     return data;
   },
+
+  getMovements: async (id: number) => {
+    const { data } = await api.get(`/inventory/movements/product/${id}`);
+    return data;
+  },
 };
 
 // ══════════════════════════════════════════════════════════
@@ -114,8 +119,18 @@ export const suppliersApi = {
     return data;
   },
 
+  get: async (id: number): Promise<Supplier> => {
+    const { data } = await api.get<Supplier>(`/suppliers/${id}`);
+    return data;
+  },
+
   create: async (payload: Partial<Supplier> & { company?: string; tax_number?: string; notes?: string }): Promise<Supplier> => {
     const { data } = await api.post<Supplier>('/suppliers/', payload);
+    return data;
+  },
+
+  statement: async (id: number) => {
+    const { data } = await api.get(`/finance/suppliers/${id}/statement`);
     return data;
   },
 

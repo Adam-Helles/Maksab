@@ -1,8 +1,13 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-export const BASE_URL = 'http://10.5.2.120:8000/api/v1';
-export const ROOT_URL = BASE_URL.replace(/\/api\/v1\/?$/, '');
+export const BASE_URL = 'https://maksab-api.onrender.com/api/v1'; // رابط الباكيند السحابي الثابت
+export const ROOT_URL = 'https://maksab-api.onrender.com';
+
+// تم إلغاء استخدام IP المحلي بناءً على طلبك للاعتماد الكلي على Render
+export const initApiConfig = async () => {};
+export const setServerIp = async (ip: string) => {};
 
 /**
  * فحص "أونلاين" الحقيقي: هل التطبيق قادر يوصل للباكيند فعلياً.

@@ -39,18 +39,17 @@ export const reportsApi = {
     await saveAndShareFile(data, `debts_${todayStamp()}.xlsx`, XLSX_MIME);
   },
 
-  exportInvoicePdf: async (invoiceId: number, shopName = 'Maksab'): Promise<void> => {
+  exportInvoicePdf: async (invoiceId: number): Promise<void> => {
     const { data } = await api.get(`/reports/pdf/invoice/${invoiceId}`, {
-      params: { shop_name: shopName },
       responseType: 'arraybuffer',
     });
     await saveAndShareFile(data, `invoice_${invoiceId}.pdf`, PDF_MIME);
   },
 
   /** يتطلب صلاحية manager فما فوق بالباكيند */
-  exportSalesPdf: async (dateFrom?: string, dateTo?: string, shopName = 'Maksab'): Promise<void> => {
+  exportSalesPdf: async (dateFrom?: string, dateTo?: string): Promise<void> => {
     const { data } = await api.get('/reports/pdf/sales', {
-      params: { date_from: dateFrom, date_to: dateTo, shop_name: shopName },
+      params: { date_from: dateFrom, date_to: dateTo },
       responseType: 'arraybuffer',
     });
     await saveAndShareFile(data, `sales_report_${todayStamp()}.pdf`, PDF_MIME);

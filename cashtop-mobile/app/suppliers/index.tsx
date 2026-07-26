@@ -1,40 +1,50 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Input, Badge, Button, EmptyState } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
-import { suppliersApi } from '../../src/api';
 import type { Supplier } from '../../src/types';
+import {
+  searchSuppliersCache,
+  recordSupplierPaymentLocal,
+  runSupplierSync,
+} from '../../src/db/supplierSync';
 
 export default function SuppliersScreen() {
   const router = useRouter();
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [payingId, setPayingId] = useState<number | null>(null);
   const [payAmount, setPayAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const load = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setLoading(true);
-    try {
-      const data = await suppliersApi.list(search.trim() || undefined);
-      setSuppliers(data);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
+  const loadLocal = useCallback(() => {
+    const data = searchSuppliersCache(search.trim());
+    setSuppliers(data);
   }, [search]);
 
-  useEffect(() => {
-    const t = setTimeout(() => load(true), 300);
-    return () => clearTimeout(t);
-  }, [load]);
+  // Initial load from local cache (instant, no spinner)
+  useFocusEffect(useCallback(() => {
+    loadLocal();
+  }, [loadLocal]));
 
-  const submitPayment = async (supplierId: number) => {
+  // Trigger sync in background
+  useEffect(() => {
+    const t = setTimeout(() => {
+      runSupplierSync().then(loadLocal).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Re-filter on search change
+  useEffect(() => {
+    loadLocal();
+  }, [search]);
+
+  const submitPayment = (supplierId: number) => {
     const amount = Number(payAmount);
     if (!amount || amount <= 0) {
       Alert.alert('أدخل مبلغاً صحيحاً');
@@ -42,13 +52,13 @@ export default function SuppliersScreen() {
     }
     setSubmitting(true);
     try {
-      await suppliersApi.payDebt(supplierId, amount, 'cash');
+      recordSupplierPaymentLocal(supplierId, amount, 'cash');
       setPayingId(null);
       setPayAmount('');
-      await load();
-      Alert.alert('تم تسجيل الدفعة ✅');
+      loadLocal();
+      Alert.alert('تم تسجيل الدفعة ✅', 'ستتم المزامنة مع السيرفر تلقائياً عند توفر الإنترنت');
     } catch (e: any) {
-      Alert.alert('خطأ', e?.response?.data?.detail || 'تعذّر تسجيل الدفعة');
+      Alert.alert('خطأ', 'تعذّر تسجيل الدفعة');
     } finally {
       setSubmitting(false);
     }
@@ -75,62 +85,73 @@ export default function SuppliersScreen() {
         />
       </View>
 
-      {loading ? (
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator size="large" color={Colors.primary} />
-        </View>
-      ) : suppliers.length === 0 ? (
+      {suppliers.length === 0 ? (
         <EmptyState icon="🚚" title="لا يوجد موردين" subtitle={search ? 'جرّب كلمة بحث مختلفة' : 'اضغط + لإضافة أول مورد'} />
       ) : (
         <FlatList
           data={suppliers}
-          keyExtractor={s => String(s.id)}
+          keyExtractor={s => s.local_id ?? String(s.id)}
           contentContainerStyle={{ padding: Spacing.lg, paddingBottom: 100, gap: Spacing.sm }}
-          renderItem={({ item }) => (
-            <View style={{ backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.md, ...Shadow.sm }}>
-              <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontWeight: '700', color: Colors.gray800, textAlign: 'right' }}>{item.name}</Text>
-                  {!!item.phone && (
-                    <Text style={{ fontSize: 12, color: Colors.gray400, textAlign: 'right', marginTop: 2 }}>
-                      {item.phone}
-                    </Text>
+          renderItem={({ item }) => {
+            const isPending = !!item.isPending;
+            return (
+              <TouchableOpacity
+                style={{ backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.md, ...Shadow.sm }}
+                onPress={() => !isPending && router.push(`/suppliers/${item.id}`)}
+              >
+                <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontWeight: '700', color: Colors.gray800, textAlign: 'right' }}>{item.name}</Text>
+                      {isPending && (
+                        <View style={{ backgroundColor: Colors.warning + '33', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+                          <Text style={{ fontSize: 10, color: Colors.warning, fontWeight: '700' }}>⏳ معلق</Text>
+                        </View>
+                      )}
+                    </View>
+                    {!!item.phone && (
+                      <Text style={{ fontSize: 12, color: Colors.gray400, textAlign: 'right', marginTop: 2 }}>
+                        {item.phone}
+                      </Text>
+                    )}
+                  </View>
+                  {!isPending && (
+                    item.balance > 0 ? (
+                      <Badge label={`مستحق: ${item.balance.toFixed(0)} ₪`} color="red" />
+                    ) : (
+                      <Badge label="لا يوجد مستحقات" color="green" />
+                    )
                   )}
                 </View>
-                {item.balance > 0 ? (
-                  <Badge label={`مستحق: ${item.balance.toFixed(0)} ₪`} color="red" />
-                ) : (
-                  <Badge label="لا يوجد مستحقات" color="green" />
-                )}
-              </View>
 
-              {item.balance > 0 && (
-                payingId === item.id ? (
-                  <View style={{ marginTop: Spacing.sm }}>
-                    <Input
-                      placeholder={`المبلغ (المستحق: ${item.balance.toFixed(2)} ₪)`}
-                      value={payAmount}
-                      onChangeText={setPayAmount}
-                      keyboardType="decimal-pad"
-                      autoFocus
-                    />
-                    <View style={{ flexDirection: 'row-reverse', gap: 8 }}>
-                      <Button title="تأكيد" variant="success" onPress={() => submitPayment(item.id)}
-                              loading={submitting} style={{ flex: 1 }} size="sm" />
-                      <Button title="إلغاء" variant="secondary"
-                              onPress={() => { setPayingId(null); setPayAmount(''); }} style={{ flex: 1 }} size="sm" />
+                {!isPending && item.balance > 0 && (
+                  payingId === item.id ? (
+                    <View style={{ marginTop: Spacing.sm }}>
+                      <Input
+                        placeholder={`المبلغ (المستحق: ${item.balance.toFixed(2)} ₪)`}
+                        value={payAmount}
+                        onChangeText={setPayAmount}
+                        keyboardType="decimal-pad"
+                        autoFocus
+                      />
+                      <View style={{ flexDirection: 'row-reverse', gap: 8 }}>
+                        <Button title="تأكيد" variant="success" onPress={() => submitPayment(item.id)}
+                                loading={submitting} style={{ flex: 1 }} size="sm" />
+                        <Button title="إلغاء" variant="secondary"
+                                onPress={() => { setPayingId(null); setPayAmount(''); }} style={{ flex: 1 }} size="sm" />
+                      </View>
                     </View>
-                  </View>
-                ) : (
-                  <TouchableOpacity onPress={() => setPayingId(item.id)} style={{ marginTop: Spacing.sm }}>
-                    <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 13, textAlign: 'center' }}>
-                      تسجيل دفعة
-                    </Text>
-                  </TouchableOpacity>
-                )
-              )}
-            </View>
-          )}
+                  ) : (
+                    <TouchableOpacity onPress={() => setPayingId(item.id)} style={{ marginTop: Spacing.sm }}>
+                      <Text style={{ color: Colors.primary, fontWeight: '700', fontSize: 13, textAlign: 'center' }}>
+                        تسجيل دفعة
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                )}
+              </TouchableOpacity>
+            );
+          }}
         />
       )}
 

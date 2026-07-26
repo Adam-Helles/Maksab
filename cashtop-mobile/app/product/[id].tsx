@@ -129,6 +129,13 @@ export default function ProductDetailsScreen() {
             <Button title="خصم 1" size="sm" variant="danger" onPress={() => adjustStock(-1)}
                     loading={adjusting} icon={<Ionicons name="remove" size={16} color={Colors.white} />} />
           </View>
+          <Button 
+            title="سجل الحركات" 
+            variant="outline" 
+            fullWidth 
+            style={{ marginTop: Spacing.md }} 
+            onPress={() => router.push(`/product/history/${product.id}`)} 
+          />
         </Card>
 
         <SectionTitle text="معلومات إضافية" />
