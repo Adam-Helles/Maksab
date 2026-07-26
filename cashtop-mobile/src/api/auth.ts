@@ -1,9 +1,21 @@
 import { api } from './client';
 import type { AuthTokens, User } from '../types';
+import * as SecureStore from 'expo-secure-store';
+import * as Crypto from 'expo-crypto';
+
+export async function getOrCreateDeviceId(): Promise<string> {
+  let deviceId = await SecureStore.getItemAsync('maksab_device_id');
+  if (!deviceId) {
+    deviceId = Crypto.randomUUID();
+    await SecureStore.setItemAsync('maksab_device_id', deviceId);
+  }
+  return deviceId;
+}
 
 export const authApi = {
   login: async (username: string, password: string): Promise<AuthTokens> => {
-    const { data } = await api.post<AuthTokens>('/auth/login', { username, password });
+    const device_id = await getOrCreateDeviceId();
+    const { data } = await api.post<AuthTokens>('/auth/login', { username, password, device_id });
     return data;
   },
 
@@ -37,6 +49,11 @@ export const authApi = {
       current_password: currentPassword,
       new_password: newPassword,
     });
+    return data;
+  },
+
+  getLicenseStatus: async () => {
+    const { data } = await api.get('/licenses/status');
     return data;
   },
 };
