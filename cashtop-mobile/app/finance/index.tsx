@@ -9,6 +9,7 @@ import { dashboardApi } from '../../src/api';
 import type { DashboardSummary } from '../../src/types';
 
 import { financeApi } from '../../src/api/reports';
+import { getLocalCustomerFinanceStats } from '../../src/db/customerSync';
 
 export default function FinanceScreen() {
   const router = useRouter();
@@ -44,6 +45,12 @@ export default function FinanceScreen() {
   };
 
   const f = summary?.finance;
+  const localStats = getLocalCustomerFinanceStats();
+  
+  const finalCustomersDebt = localStats.customers_debt || f?.customers_debt || 0;
+  const finalTotalCustomers = localStats.total_customers || f?.total_customers || 0;
+  const finalSuppliersDebt = f?.suppliers_debt || 0;
+  const finalNetReceivable = finalCustomersDebt - finalSuppliersDebt;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }} edges={['top']}>
@@ -70,28 +77,28 @@ export default function FinanceScreen() {
             <FinanceCard
               icon="people-outline"
               label="ديون العملاء"
-              value={`${(f?.customers_debt ?? 0).toFixed(2)} ₪`}
+              value={`${finalCustomersDebt.toFixed(2)} ₪`}
               color={Colors.danger}
               onPress={() => router.push('/customers')}
             />
             <FinanceCard
               icon="cube-outline"
               label="مستحقات الموردين"
-              value={`${(f?.suppliers_debt ?? 0).toFixed(2)} ₪`}
+              value={`${finalSuppliersDebt.toFixed(2)} ₪`}
               color={Colors.warning}
               onPress={() => router.push('/suppliers')}
             />
             <FinanceCard
               icon="trending-up-outline"
               label="صافي المستحق لنا"
-              value={`${(f?.net_receivable ?? 0).toFixed(2)} ₪`}
+              value={`${finalNetReceivable.toFixed(2)} ₪`}
               color={Colors.success}
               full
             />
             <FinanceCard
               icon="person-outline"
               label="عدد العملاء"
-              value={`${f?.total_customers ?? 0}`}
+              value={`${finalTotalCustomers}`}
               color={Colors.info}
               full
             />

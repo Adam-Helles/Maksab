@@ -433,3 +433,22 @@ export async function runCustomerSync() {
     pulled: pullResult.customers.length,
   };
 }
+
+export function getLocalCustomerFinanceStats() {
+  try {
+    const cacheStats = db.getFirstSync<{ total: number, debt: number }>(
+      `SELECT COUNT(id) as total, SUM(current_debt) as debt FROM customers_cache WHERE is_active = 1`
+    ) || { total: 0, debt: 0 };
+    
+    const pendingNew = db.getFirstSync<{ total: number, debt: number }>(
+      `SELECT COUNT(local_id) as total, 0 as debt FROM pending_new_customers WHERE synced = 0`
+    ) || { total: 0, debt: 0 };
+
+    return {
+      total_customers: (cacheStats.total || 0) + (pendingNew.total || 0),
+      customers_debt: (cacheStats.debt || 0) + (pendingNew.debt || 0),
+    };
+  } catch (e) {
+    return { total_customers: 0, customers_debt: 0 };
+  }
+}
