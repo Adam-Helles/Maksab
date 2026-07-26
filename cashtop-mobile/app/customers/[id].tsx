@@ -8,6 +8,7 @@ import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
 import { customersApi } from '../../src/api';
 import {
   getCustomerCache,
+  upsertCustomerCache,
   getPendingPayments,
   getPendingDebts,
   recordPaymentLocal,
@@ -63,19 +64,45 @@ export default function CustomerStatementScreen() {
     }
 
     // 2) اقرأ من الكاش المحلي دائماً (سواء نجحت المزامنة أو لأ)
-    const cached = getCustomerCache(customerId);
-    setCustomer(cached);
+    let cached = getCustomerCache(customerId);
     setPendingPayments(getPendingPayments(customerId));
     setPendingDebts(getPendingDebts(customerId));
 
     // 3) كشف الحساب التفصيلي (سجل الفواتير) — أونلاين فقط حالياً
+    let fetchedStatement: any = null;
     try {
-      const s = await customersApi.statement(customerId);
-      setStatement(s);
+      fetchedStatement = await customersApi.statement(customerId);
+      setStatement(fetchedStatement);
     } catch {
       setStatement(null);
     }
 
+    // 4) Fallback: لو العميل ما كان في الكاش المحلي (عميل جديد أو أول مزامنة)
+    //    بنبني بياناته من كشف الحساب الواصل من السيرفر مباشرة بدون ما ننتظر
+    if (!cached && fetchedStatement?.customer_name) {
+      cached = {
+        id: customerId,
+        name: fetchedStatement.customer_name,
+        phone: fetchedStatement.phone ?? null,
+        phone2: null,
+        email: null,
+        address: null,
+        notes: null,
+        credit_limit: fetchedStatement.credit_limit ?? 0,
+        current_debt: fetchedStatement.current_debt ?? 0,
+        is_active: 1,
+        updated_at: new Date().toISOString(),
+        profile_dirty: 0,
+      };
+      // نحفظه محلياً عشان المرة الجاية يكون موجود بالكاش
+      upsertCustomerCache({
+        id: cached.id, name: cached.name, phone: cached.phone,
+        credit_limit: cached.credit_limit, current_debt: cached.current_debt,
+        is_active: true, updated_at: cached.updated_at,
+      });
+    }
+
+    setCustomer(cached);
     setLoading(false);
   }, [customerId]);
 
@@ -162,7 +189,17 @@ export default function CustomerStatementScreen() {
     }
   };
 
-  if (loading || !customer) return <LoadingScreen message="جاري تحميل كشف الحساب..." />;
+  if (loading) return <LoadingScreen message="جاري تحميل كشف الحساب..." />;
+  if (!customer) return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background, justifyContent: 'center', alignItems: 'center' }}>
+      <Text style={{ fontSize: 16, color: Colors.gray500, textAlign: 'center', padding: 32 }}>
+        ⚠️ لم يتم العثور على بيانات العميل{`\n`}تأكد من الاتصال بالإنترنت واضغط تحديث
+      </Text>
+      <TouchableOpacity onPress={load} style={{ marginTop: 16, padding: 12, backgroundColor: Colors.primary, borderRadius: 8 }}>
+        <Text style={{ color: '#fff', fontWeight: '700' }}>إعادة المحاولة</Text>
+      </TouchableOpacity>
+    </SafeAreaView>
+  );
 
   // سجل الحركات من السيرفر (لو متوفر) + الدفعات المحلية يلي لسا ما انزامنت
   const serverTransactions: any[] = Array.isArray(statement) ? statement
