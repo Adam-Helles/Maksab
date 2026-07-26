@@ -29,6 +29,21 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
             detail="اسم المستخدم أو كلمة المرور غير صحيحة",
         )
 
+    # ── Device Binding Logic ──
+    if data.device_id:
+        from app.models.store import Store
+        store = db.query(Store).filter(Store.id == user.store_id).first()
+        if store:
+            if not store.allowed_device_id:
+                # Bind the store to this device
+                store.allowed_device_id = data.device_id
+            elif store.allowed_device_id != data.device_id:
+                # Device mismatch
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="هذا الاشتراك مرتبط بجهاز آخر. يرجى التواصل مع الإدارة لإعادة تعيين الجهاز.",
+                )
+
     # تحديث آخر دخول
     user.last_login = datetime.now(timezone.utc)
     db.commit()

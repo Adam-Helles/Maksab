@@ -71,6 +71,7 @@ class TokenResponse(BaseModel):
 class LoginRequest(BaseModel):
     username: str
     password: str
+    device_id: Optional[str] = None
 
 
 class RefreshTokenRequest(BaseModel):

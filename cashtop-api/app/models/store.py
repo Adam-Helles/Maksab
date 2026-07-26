@@ -21,6 +21,7 @@ class Store(Base, TimestampMixin):
     # لكن هاد بيغطي حالة تعليق فوري لأي سبب: عدم دفع، إساءة استخدام، الخ)
     is_active = Column(Boolean, default=True, nullable=False)
     subscription_expires_at = Column(DateTime(timezone=True), nullable=True)
+    allowed_device_id = Column(String(255), nullable=True)
 
     def __repr__(self):
         return f"<Store {self.name} active={self.is_active}>"
