@@ -58,8 +58,17 @@ export default function NewCustomerScreen() {
         router.back();
       }
     } catch (err: any) {
-      const detail = err?.response?.data?.detail || err?.message || 'حدث خطأ أثناء حفظ العميل';
-      Alert.alert('تعذر الحفظ', String(detail));
+      // FastAPI بيرجع detail كـ Array عند خطأ 422 — نحوله لنص مفهوم
+      const rawDetail = err?.response?.data?.detail;
+      let detail: string;
+      if (Array.isArray(rawDetail)) {
+        detail = rawDetail.map((e: any) => e?.msg || JSON.stringify(e)).join(' | ');
+      } else if (typeof rawDetail === 'string') {
+        detail = rawDetail;
+      } else {
+        detail = err?.message || 'حدث خطأ أثناء حفظ العميل';
+      }
+      Alert.alert('تعذر الحفظ', detail);
     } finally {
       setSaving(false);
     }
