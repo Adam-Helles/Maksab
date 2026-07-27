@@ -5,6 +5,7 @@ import { Button, Input, Card } from './ui';
 import { Colors, Fonts, Spacing, Radius } from '../types/theme';
 import { categoriesApi } from '../api';
 import type { Product, Category, UnitType } from '../types';
+import { searchCategoriesCache } from '../db/categorySync';
 
 const UNIT_OPTIONS: { value: UnitType; label: string }[] = [
   { value: 'piece',  label: 'قطعة'  },
@@ -95,7 +96,13 @@ export const ProductForm: React.FC<ProductFormProps> = ({
     setValues(prev => ({ ...prev, [key]: val }));
 
   useEffect(() => {
-    categoriesApi.list().then(setCategories).catch(() => {});
+    // Load categories from local cache instead of API
+    try {
+      const localCats = searchCategoriesCache();
+      setCategories(localCats);
+    } catch (e) {
+      // Fallback or ignore
+    }
   }, []);
 
   const handleSubmit = async () => {

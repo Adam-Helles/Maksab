@@ -7,10 +7,9 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Input, Badge, EmptyState } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
-import { productsApi, categoriesApi } from '../../src/api';
-import type { Product, Category } from '../../src/types';
-import { isBackendReachable } from '../../src/api/client';
-import { searchProductsCache } from '../../src/db/productsCache';
+import { searchProductsCache, localProductToProduct } from '../../src/db/productsCache';
+import { searchCategoriesCache } from '../../src/db/categorySync';
+import type { Category } from '../../src/types';
 
 export default function ProductsScreen() {
   const router = useRouter();
@@ -26,31 +25,14 @@ export default function ProductsScreen() {
   const fetchProducts = useCallback(async (showSpinner = false) => {
     if (showSpinner) setLoading(true);
     try {
-      const isOnline = await isBackendReachable();
-      if (isOnline) {
-        const data = await productsApi.list({
-          search: search.trim() || undefined,
-          category_id: categoryId,
-          low_stock: lowStockOnly || undefined,
-          limit: 100,
-        });
-        setProducts(data);
-      } else {
-        const cached = searchProductsCache(search);
-        let filtered = cached;
-        if (categoryId) filtered = filtered.filter(p => p.category_id === categoryId);
-        if (lowStockOnly) filtered = filtered.filter(p => p.is_low_stock);
-        setProducts(filtered);
-      }
+      const cached = searchProductsCache(search, 200);
+      let filtered = cached;
+      if (categoryId) filtered = filtered.filter(p => p.category_id === categoryId);
+      if (lowStockOnly) filtered = filtered.filter(p => p.stock_quantity <= p.pieces_per_carton * 2); // basic low stock
+      
+      setProducts(filtered.map(p => localProductToProduct(p as any)));
     } catch (e) {
-      // fallback to offline
-      try {
-        const cached = searchProductsCache(search);
-        let filtered = cached;
-        if (categoryId) filtered = filtered.filter(p => p.category_id === categoryId);
-        if (lowStockOnly) filtered = filtered.filter(p => p.is_low_stock);
-        setProducts(filtered);
-      } catch (err) {}
+      console.log('Error loading products from cache:', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -58,7 +40,10 @@ export default function ProductsScreen() {
   }, [search, categoryId, lowStockOnly]);
 
   useEffect(() => {
-    categoriesApi.list().then(setCategories).catch(() => {});
+    try {
+      const localCats = searchCategoriesCache();
+      setCategories(localCats);
+    } catch(e) {}
   }, []);
 
   useEffect(() => {

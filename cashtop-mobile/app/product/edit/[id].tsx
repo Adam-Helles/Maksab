@@ -9,6 +9,8 @@ import { Colors, Fonts, Spacing } from '../../../src/types/theme';
 import { productsApi } from '../../../src/api';
 import type { Product } from '../../../src/types';
 import type { ProductFormValues } from '../../../src/components/ProductForm';
+import { getProductCache, localProductToProduct, updateProductLocal, runProductSync } from '../../../src/db/productsCache';
+import { useNetInfo } from '@react-native-community/netinfo';
 
 export default function EditProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -16,14 +18,23 @@ export default function EditProductScreen() {
   const productId = Number(id);
 
   const [initialValues, setInitialValues] = useState<ProductFormValues | null>(null);
+  const netInfo = useNetInfo();
 
   useEffect(() => {
-    productsApi.get(productId)
-      .then((p: Product) => setInitialValues(productToFormValues(p)))
-      .catch(() => {
-        Alert.alert('خطأ', 'تعذّر تحميل بيانات المنتج');
-        router.back();
-      });
+    const local = getProductCache(productId);
+    if (local) {
+      setInitialValues(productToFormValues(localProductToProduct(local)));
+    } else if (productId > 0) {
+      productsApi.get(productId)
+        .then((p: Product) => setInitialValues(productToFormValues(p)))
+        .catch(() => {
+          Alert.alert('خطأ', 'تعذّر تحميل بيانات المنتج');
+          router.back();
+        });
+    } else {
+       Alert.alert('خطأ', 'تعذّر إيجاد المنتج محلياً');
+       router.back();
+    }
   }, [productId]);
 
   if (!initialValues) return <LoadingScreen message="جاري تحميل بيانات المنتج..." />;
@@ -48,7 +59,24 @@ export default function EditProductScreen() {
         submitLabel="حفظ التعديلات"
         onSubmit={async (values: ProductFormValues) => {
           const payload = formValuesToPayload(values);
-          await productsApi.update(productId, payload);
+          
+          updateProductLocal(productId, {
+             name: payload.name,
+             name_ar: payload.name_ar,
+             barcode_piece: payload.barcode_piece,
+             barcode_carton: payload.barcode_carton,
+             retail_price: payload.retail_price,
+             carton_price: payload.carton_price,
+             cost_price: payload.cost_price,
+             tax_rate: payload.tax_rate,
+             pieces_per_carton: payload.pieces_per_carton,
+             is_active: payload.is_active ? 1 : 0
+          } as any);
+
+          if (netInfo.isConnected) {
+            runProductSync().catch(() => {});
+          }
+
           router.replace({ pathname: '/product/[id]', params: { id: String(productId) } });
         }}
       />

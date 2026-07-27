@@ -7,6 +7,7 @@ import { useAuthStore } from '../src/store/authStore';
 import { initDatabase } from '../src/db/database';
 import { initCustomerTables } from '../src/db/customerSync';
 import { initSupplierTables } from '../src/db/supplierSync';
+import { initCategoryTables } from '../src/db/categorySync';
 import { initProductsCache } from '../src/db/productsCache';
 import { initOfflineSalesTable } from '../src/db/offlineSales';
 import { initApiConfig } from '../src/api/client';
@@ -22,6 +23,7 @@ export default function RootLayout() {
     initDatabase();
     initCustomerTables();
     initSupplierTables();
+    initCategoryTables();
     initProductsCache();
     initOfflineSalesTable();
   }, []);

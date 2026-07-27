@@ -13,6 +13,8 @@ import { isBackendReachable } from '../../src/api/client';
 import { reportsApi } from '../../src/api/reports';
 import { useCartStore } from '../../src/store/cartStore';
 import type { Product, Customer, PaymentMethod } from '../../src/types';
+import { runProductSync } from '../../src/db/productsCache';
+import { runCategorySync } from '../../src/db/categorySync';
 import {
   searchProductsCache, localProductToProduct, refreshProductsCache,
 } from '../../src/db/productsCache';
@@ -63,7 +65,8 @@ export default function POSScreen() {
       refreshPendingCount();
 
       if (online) {
-        refreshProductsCache().catch(() => {});
+        runProductSync().catch(() => {});
+        runCategorySync().catch(() => {});
         runCustomerSync().catch(() => {});
         runSupplierSync().catch(() => {});
 
