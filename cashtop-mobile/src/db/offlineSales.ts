@@ -19,8 +19,9 @@ export type LocalOfflineSaleItem = {
 
 export type LocalOfflineSale = {
   id: string;
-  customer_id: number;
-  customer_name: string; // نسخة عرض محلية بس، مش مصدر حقيقة
+  customer_id: number | null;
+  customer_name: string | null; // نسخة عرض محلية بس، مش مصدر حقيقة
+  payment_method: string;
   items: LocalOfflineSaleItem[];
   total: number;
   client_created_at: string;
@@ -33,16 +34,23 @@ export function initOfflineSalesTable() {
   db.execSync(`
     CREATE TABLE IF NOT EXISTS pending_offline_sales (
       id TEXT PRIMARY KEY NOT NULL,
-      customer_id INTEGER NOT NULL,
-      customer_name TEXT NOT NULL,
+      customer_id INTEGER,
+      customer_name TEXT,
       items_json TEXT NOT NULL,
       total REAL NOT NULL,
       client_created_at TEXT NOT NULL,
       synced INTEGER NOT NULL DEFAULT 0,
       needs_review INTEGER NOT NULL DEFAULT 0,
-      review_notes TEXT
+      review_notes TEXT,
+      payment_method TEXT NOT NULL DEFAULT 'credit'
     );
   `);
+  // ترقية الجدول القديم إذا لم يكن يحتوي على payment_method
+  try {
+    db.execSync(`ALTER TABLE pending_offline_sales ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'credit';`);
+  } catch (e) {
+    // العمود موجود مسبقاً (الخطأ متوقع)
+  }
 }
 
 /**
@@ -51,19 +59,20 @@ export function initOfflineSalesTable() {
  * وقت المزامنة).
  */
 export function recordOfflineSaleLocal(
-  customerId: number,
-  customerName: string,
+  customerId: number | null,
+  customerName: string | null,
   items: LocalOfflineSaleItem[],
-  total: number
+  total: number,
+  paymentMethod: string = 'credit'
 ): string {
   const id = Crypto.randomUUID();
   const client_created_at = new Date().toISOString();
 
   db.runSync(
     `INSERT INTO pending_offline_sales
-      (id, customer_id, customer_name, items_json, total, client_created_at, synced)
-    VALUES (?, ?, ?, ?, ?, ?, 0);`,
-    [id, customerId, customerName, JSON.stringify(items), total, client_created_at]
+      (id, customer_id, customer_name, items_json, total, client_created_at, synced, payment_method)
+    VALUES (?, ?, ?, ?, ?, ?, 0, ?);`,
+    [id, customerId, customerName, JSON.stringify(items), total, client_created_at, paymentMethod]
   );
 
   for (const item of items) {
@@ -122,10 +131,12 @@ export async function syncOfflineSales() {
 
   while (attempt < maxAttempts) {
     try {
+      console.log(`Pushing ${pending.length} offline sales...`);
       const { data } = await api.post('/sync/offline-sales/push', {
         sales: pending.map((s) => ({
           id: s.id,
           customer_id: s.customer_id,
+          payment_method: s.payment_method,
           items: s.items.map((i) => ({
             product_id: i.product_id,
             quantity: i.quantity,

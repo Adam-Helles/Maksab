@@ -29,7 +29,8 @@ class OfflineSaleItemIn(BaseModel):
 
 class OfflineSaleIn(BaseModel):
     id: str  # UUID يتولّد بالجهاز — بيصير Invoice.client_uuid
-    customer_id: int  # بيع بالآجل دايماً مرتبط بعميل محدد
+    customer_id: Optional[int] = None
+    payment_method: str = "credit"
     items: List[OfflineSaleItemIn]
     client_created_at: datetime
 

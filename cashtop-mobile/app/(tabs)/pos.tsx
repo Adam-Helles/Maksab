@@ -19,6 +19,7 @@ import {
   searchProductsCache, localProductToProduct, refreshProductsCache,
 } from '../../src/db/productsCache';
 import { recordOfflineSaleLocal, syncOfflineSales, getPendingOfflineSalesCount } from '../../src/db/offlineSales';
+import { syncOfflinePurchases } from '../../src/db/offlinePurchases';
 import { runCustomerSync } from '../../src/db/customerSync';
 import { runSupplierSync } from '../../src/db/supplierSync';
 
@@ -77,7 +78,20 @@ export default function POSScreen() {
               if (result.needsReview > 0) {
                 Alert.alert(
                   'تنبيه مراجعة',
-                  `${result.needsReview} من عمليات البيع الآجل المُزامنة تحتاج مراجعة يدوية للمخزون (من شاشة "فواتير تحتاج مراجعة").`
+                  `${result.needsReview} من عمليات البيع المُزامنة تحتاج مراجعة يدوية للمخزون.`
+                );
+              }
+            }
+          })
+          .catch(() => {});
+
+        syncOfflinePurchases()
+          .then((result) => {
+            if (result.pushed > 0 && mounted) {
+              if (result.needsReview > 0) {
+                Alert.alert(
+                  'تنبيه مراجعة المشتريات',
+                  `${result.needsReview} من فواتير الشراء الأوفلاين تحتاج مراجعة.`
                 );
               }
             }
@@ -161,14 +175,7 @@ export default function POSScreen() {
         Alert.alert('غير متاح أوفلاين', 'حفظ المسودة يحتاج اتصال بالإنترنت.');
         return;
       }
-      if (paymentMethod !== 'credit') {
-        Alert.alert(
-          'غير متاح أوفلاين',
-          'بدون إنترنت، البيع مدعوم فقط بطريقة "آجل" (على حساب عميل). اختر عميلاً وطريقة الدفع "آجل"، أو اتصل بالإنترنت.'
-        );
-        return;
-      }
-      if (!selectedCustomer) {
+      if (paymentMethod === 'credit' && !selectedCustomer) {
         Alert.alert('اختر عميلاً', 'البيع الآجل أوفلاين يتطلب اختيار عميل من الكاش المحلي.');
         return;
       }
@@ -176,8 +183,8 @@ export default function POSScreen() {
       setSubmitting(true);
       try {
         recordOfflineSaleLocal(
-          selectedCustomer.id,
-          selectedCustomer.name,
+          selectedCustomer ? selectedCustomer.id : null,
+          selectedCustomer ? selectedCustomer.name : null,
           items.map((i) => ({
             product_id: i.product.id,
             quantity: i.quantity,
@@ -185,7 +192,8 @@ export default function POSScreen() {
             unit_price: i.unit_price,
             pieces_per_carton: i.product.pieces_per_carton,
           })),
-          total
+          total,
+          paymentMethod
         );
         setPendingOfflineSales(getPendingOfflineSalesCount());
         resetForm();

@@ -10,6 +10,7 @@ import { initSupplierTables } from '../src/db/supplierSync';
 import { initCategoryTables } from '../src/db/categorySync';
 import { initProductsCache } from '../src/db/productsCache';
 import { initOfflineSalesTable } from '../src/db/offlineSales';
+import { initOfflinePurchasesTable } from '../src/db/offlinePurchases';
 import { initApiConfig } from '../src/api/client';
 
 export default function RootLayout() {
@@ -26,6 +27,7 @@ export default function RootLayout() {
     initCategoryTables();
     initProductsCache();
     initOfflineSalesTable();
+    initOfflinePurchasesTable();
   }, []);
 
   // استعادة الجلسة عند بدء التطبيق

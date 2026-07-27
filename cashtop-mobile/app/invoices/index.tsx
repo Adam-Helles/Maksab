@@ -5,11 +5,16 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { invoicesApi, reportsApi } from '../../src/api';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { isBackendReachable } from '../../src/api/client';
+
+const INVOICES_CACHE_KEY = 'invoices_list_cache';
 
 export default function InvoicesScreen() {
   const router = useRouter();
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isFromCache, setIsFromCache] = useState(false);
 
   useEffect(() => {
     loadInvoices();
@@ -17,8 +22,19 @@ export default function InvoicesScreen() {
 
   const loadInvoices = async () => {
     try {
-      const data = await invoicesApi.list();
-      setInvoices(data);
+      const online = await isBackendReachable();
+      if (online) {
+        const data = await invoicesApi.list();
+        setInvoices(data);
+        setIsFromCache(false);
+        await AsyncStorage.setItem(INVOICES_CACHE_KEY, JSON.stringify(data));
+      } else {
+        const cached = await AsyncStorage.getItem(INVOICES_CACHE_KEY);
+        if (cached) {
+          setInvoices(JSON.parse(cached));
+          setIsFromCache(true);
+        }
+      }
     } catch (e) {
       console.log(e);
     } finally {
@@ -52,6 +68,16 @@ export default function InvoicesScreen() {
         <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 50 }} />
       ) : (
         <ScrollView contentContainerStyle={{ padding: Spacing.lg }}>
+          {isFromCache && (
+            <View style={{ backgroundColor: '#F59E0B', padding: 8, marginBottom: Spacing.md,
+                           borderRadius: 8, flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="cloud-offline-outline" size={15} color="white" />
+              <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
+                تعذّر الاتصال — يعرض آخر فواتير محفوظة.
+              </Text>
+            </View>
+          )}
+
           {invoices.length === 0 ? (
             <Text style={{ textAlign: 'center', color: Colors.gray400, marginTop: 40 }}>لا توجد فواتير سابقة</Text>
           ) : (

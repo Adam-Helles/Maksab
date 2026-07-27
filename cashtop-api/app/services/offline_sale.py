@@ -38,16 +38,24 @@ def sync_offline_sale(
             reason=existing.review_notes,
         )
 
-    # ── التحقق من العميل ─────────────────────────────────────
-    customer = db.query(Customer).filter(
-        Customer.id == sale.customer_id,
-        Customer.store_id == store_id,
-    ).first()
-    if customer is None:
+    # ── التحقق من العميل (مطلوب للآجل، اختياري للكاش) ─────────
+    customer = None
+    if sale.customer_id is not None:
+        customer = db.query(Customer).filter(
+            Customer.id == sale.customer_id,
+            Customer.store_id == store_id,
+        ).first()
+        if customer is None:
+            return OfflineSaleResult(
+                id=sale.id,
+                status="rejected",
+                reason="العميل غير موجود أو لا ينتمي لمحلك",
+            )
+    elif sale.payment_method == "credit":
         return OfflineSaleResult(
             id=sale.id,
             status="rejected",
-            reason="العميل غير موجود أو لا ينتمي لمحلك",
+            reason="البيع الآجل يتطلب اختيار عميل",
         )
 
     # ── بناء أصناف الفاتورة (تجاهل أي منتج مش موجود/مش لهاد المحل) ──
@@ -90,9 +98,16 @@ def sync_offline_sale(
             reason="لا يوجد صنف صالح واحد بهاي العملية — " + "؛ ".join(skipped_notes),
         )
 
-    # ── إنشاء الفاتورة (بيع بالآجل — مدفوع = 0) ──────────────
+    # ── إنشاء الفاتورة ────────────────────────────────────────
     subtotal = round(sum(i.total for i in items_db), 3)
     total = subtotal  # بدون خصم/ضريبة على مستوى الفاتورة بالنسخة الأولى
+
+    is_cash = sale.payment_method == "cash"
+    paid_amount = total if is_cash else 0.0
+    remaining_amount = 0.0 if is_cash else total
+    payment_status = PaymentStatus.PAID if is_cash else PaymentStatus.UNPAID
+    payment_method_enum = PaymentMethod.CASH if is_cash else PaymentMethod.CREDIT
+    notes_text = "بيع نقدي — تمت المزامنة من جهاز أوفلاين" if is_cash else "بيع بالآجل — تمت المزامنة من جهاز أوفلاين"
 
     invoice = Invoice(
         store_id=store_id,
@@ -100,16 +115,16 @@ def sync_offline_sale(
         invoice_number=generate_invoice_number(db, store_id),
         invoice_type=InvoiceType.SALE,
         status=InvoiceStatus.COMPLETED,
-        payment_status=PaymentStatus.UNPAID,
-        payment_method=PaymentMethod.CREDIT,
-        customer_id=customer.id,
+        payment_status=payment_status,
+        payment_method=payment_method_enum,
+        customer_id=customer.id if customer else None,
         created_by=user_id,
         subtotal=subtotal,
         total=total,
-        paid_amount=0.0,
-        remaining_amount=total,
+        paid_amount=paid_amount,
+        remaining_amount=remaining_amount,
         invoice_date=sale.client_created_at.date(),
-        notes="بيع بالآجل — تمت المزامنة من جهاز أوفلاين",
+        notes=notes_text,
     )
     invoice.items = items_db
     db.add(invoice)
@@ -134,10 +149,10 @@ def sync_offline_sale(
         except ValueError as e:
             review_notes.append(str(e))
 
-    # ── تحديث دين العميل ──────────────────────────────────────
+    # ── تحديث دين العميل (للبيع الآجل فقط) ─────────────────────
     # البضاعة طلعت فعلاً من المحل وقت البيع الأوفلاين — الدين حقيقي
-    # بغض النظر عن دقة رصيد المخزون وقت المزامنة.
-    customer.current_debt += invoice.remaining_amount
+    if customer and invoice.remaining_amount > 0:
+        customer.current_debt += invoice.remaining_amount
 
     if review_notes:
         invoice.needs_review = True

@@ -219,6 +219,13 @@ export function decrementCachedStock(productId: number, qtyInPieces: number) {
   );
 }
 
+export function incrementCachedStock(productId: number, qtyInPieces: number) {
+  db.runSync(
+    `UPDATE products_cache SET stock_quantity = stock_quantity + ? WHERE id = ?;`,
+    [qtyInPieces, productId]
+  );
+}
+
 /**
  * يحوّل LocalProduct (كاش مبسّط) لشكل Product الكامل عشان يتوافق مع
  * أنواع cartStore/CartItem الموجودة. الحقول غير المخزّنة محلياً

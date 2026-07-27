@@ -4,10 +4,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input, Card, LoadingScreen } from '../../src/components/ui';
-import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
+import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
 import { suppliersApi, productsApi, invoicesApi } from '../../src/api';
 import { searchSuppliersCache, localSupplierToSupplier } from '../../src/db/supplierSync';
 import { searchProductsCache, localProductToProduct } from '../../src/db/productsCache';
+import { recordOfflinePurchaseLocal } from '../../src/db/offlinePurchases';
+import { isBackendReachable } from '../../src/api/client';
 import type { Supplier, Product } from '../../src/types';
 
 export default function PurchaseInvoiceScreen() {
@@ -112,6 +114,29 @@ export default function PurchaseInvoiceScreen() {
 
     setSubmitting(true);
     try {
+      const online = await isBackendReachable();
+      
+      if (!online) {
+        // الحفظ المحلي أوفلاين
+        recordOfflinePurchaseLocal(
+          selectedSupplier.id,
+          selectedSupplier.name,
+          cart.map(item => ({
+            product_id: item.product.id,
+            quantity: item.quantity,
+            unit_type: 'piece',
+            unit_price: item.cost_price,
+            pieces_per_carton: item.product.pieces_per_carton,
+          })),
+          total,
+          'cash'
+        );
+        Alert.alert('تم الحفظ محلياً', 'سيتم رفع الفاتورة عند توفر الإنترنت.', [
+          { text: 'موافق', onPress: () => router.back() }
+        ]);
+        return;
+      }
+
       await invoicesApi.create({
         invoice_type: 'purchase',
         supplier_id: selectedSupplier.id,
