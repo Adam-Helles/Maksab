@@ -22,6 +22,15 @@ if settings.SENTRY_DSN:
 # ─── Create Tables & Seed Admin ───────────────────────────
 def create_tables():
     Base.metadata.create_all(bind=engine)
+    
+    # محاولة إضافة عمود allowed_device_id إذا لم يكن موجوداً
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE stores ADD COLUMN allowed_device_id VARCHAR(255) NULL;"))
+    except Exception:
+        pass  # العمود موجود بالفعل أو خطأ آخر
+
 
 
 def seed_admin():
