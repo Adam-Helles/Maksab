@@ -1,33 +1,33 @@
 # app/services/offline_purchase.py
 #
-# منطق تحويل "بيع أوفلاين" (بسيط، بدون خصم يدوي) إلى فاتورة حقيقية
-# كاملة (Invoice + InvoiceItem) بنفس آلية الفاتورة الأونلاين — عشان
-# يضل المخزون والدين والتقارير كلهم مصدر حقيقة واحد.
+# منطق تحويل "شراء أوفلاين" إلى فاتورة حقيقية (Invoice PURCHASE)
+# بنفس آلية الفاتورة الأونلاين — عشان يضل المخزون والتقارير
+# كلهم مصدر حقيقة واحد. Idempotent عبر client_uuid.
 
 from typing import List
 from sqlalchemy.orm import Session
 
 from app.models.invoice import Invoice, InvoiceItem, InvoiceType, InvoiceStatus, PaymentStatus, PaymentMethod
 from app.models.product import Product
-from app.models.supplier import supplier
+from app.models.supplier import Supplier
 from app.models.stock_movement import MovementType
 from app.services.inventory import move_stock
 from app.utils.invoice_number import generate_invoice_number
-from app.schemas.offline_purchase import OfflinepurchaseIn, OfflinePurchaseResult
+from app.schemas.offline_purchase import OfflinePurchaseIn, OfflinePurchaseResult
 
 
 def sync_offline_purchase(
     db: Session,
     store_id: int,
     user_id: int,
-    purchase: OfflinepurchaseIn,
+    purchase: OfflinePurchaseIn,
 ) -> OfflinePurchaseResult:
     """
-    يعالج بيع أوفلاين واحد ويحوّله لفاتورة حقيقية.
-    Idempotent عبر client_uuid — استدعاء نفس الـ purchase.id مرتين ما بينشئ
-    فاتورتين، بيرجع نفس النتيجة الأولى.
+    يعالج فاتورة شراء أوفلاين واحدة ويحوّلها لفاتورة حقيقية.
+    Idempotent عبر client_uuid — استدعاء نفس الـ purchase.id مرتين
+    ما بينشئ فاتورتين، بيرجع نفس النتيجة الأولى.
     """
-    # ── idempotency: هاد البيع اتزامن قبل هيك؟ ──────────────
+    # ── idempotency: هاد الشراء اتزامن قبل هيك؟ ──────────────
     existing = db.query(Invoice).filter(Invoice.client_uuid == purchase.id).first()
     if existing is not None:
         return OfflinePurchaseResult(
@@ -38,25 +38,19 @@ def sync_offline_purchase(
             reason=existing.review_notes,
         )
 
-    # ── التحقق من العميل (مطلوب للآجل، اختياري للكاش) ─────────
-    supplier = None
+    # ── التحقق من المورد (اختياري) ─────────────────────────────
+    supplier_obj = None
     if purchase.supplier_id is not None:
-        supplier = db.query(supplier).filter(
-            supplier.id == purchase.supplier_id,
-            supplier.store_id == store_id,
+        supplier_obj = db.query(Supplier).filter(
+            Supplier.id == purchase.supplier_id,
+            Supplier.store_id == store_id,
         ).first()
-        if supplier is None:
+        if supplier_obj is None:
             return OfflinePurchaseResult(
                 id=purchase.id,
                 status="rejected",
-                reason="العميل غير موجود أو لا ينتمي لمحلك",
+                reason="المورد غير موجود أو لا ينتمي لمحلك",
             )
-    elif purchase.payment_method == "credit":
-        return OfflinePurchaseResult(
-            id=purchase.id,
-            status="rejected",
-            reason="البيع الآجل يتطلب اختيار عميل",
-        )
 
     # ── بناء أصناف الفاتورة (تجاهل أي منتج مش موجود/مش لهاد المحل) ──
     items_db: List[InvoiceItem] = []
@@ -75,8 +69,8 @@ def sync_offline_purchase(
             continue
 
         subtotal_item = item_in.quantity * item_in.unit_price
-        tax_amount = subtotal_item * (product.tax_rate / 100)
-        total_item = subtotal_item + tax_amount
+        # فاتورة الشراء: الضريبة لا تُحتسب على التكلفة بهذه المرحلة
+        total_item = subtotal_item
 
         items_db.append(InvoiceItem(
             store_id=store_id,
@@ -84,9 +78,9 @@ def sync_offline_purchase(
             quantity=item_in.quantity,
             unit_type=item_in.unit_type,
             unit_price=item_in.unit_price,
-            cost_price=product.cost_price,
+            cost_price=item_in.unit_price,  # سعر الشراء = التكلفة الجديدة
             discount_amount=0.0,
-            tax_amount=round(tax_amount, 3),
+            tax_amount=0.0,
             total=round(total_item, 3),
         ))
         products_by_item.append(product)
@@ -98,16 +92,16 @@ def sync_offline_purchase(
             reason="لا يوجد صنف صالح واحد بهاي العملية — " + "؛ ".join(skipped_notes),
         )
 
-    # ── إنشاء الفاتورة ────────────────────────────────────────
+    # ── إنشاء فاتورة الشراء ───────────────────────────────────
     subtotal = round(sum(i.total for i in items_db), 3)
-    total = subtotal  # بدون خصم/ضريبة على مستوى الفاتورة بالنسخة الأولى
+    total = subtotal
 
-    is_cash = purchase.payment_method == "cash"
+    is_cash = purchase.payment_method != "credit"
     paid_amount = total if is_cash else 0.0
     remaining_amount = 0.0 if is_cash else total
     payment_status = PaymentStatus.PAID if is_cash else PaymentStatus.UNPAID
     payment_method_enum = PaymentMethod.CASH if is_cash else PaymentMethod.CREDIT
-    notes_text = "بيع نقدي — تمت المزامنة من جهاز أوفلاين" if is_cash else "بيع بالآجل — تمت المزامنة من جهاز أوفلاين"
+    notes_text = "شراء نقدي — تمت المزامنة من جهاز أوفلاين"
 
     invoice = Invoice(
         store_id=store_id,
@@ -117,7 +111,7 @@ def sync_offline_purchase(
         status=InvoiceStatus.COMPLETED,
         payment_status=payment_status,
         payment_method=payment_method_enum,
-        supplier_id=supplier.id if supplier else None,
+        supplier_id=supplier_obj.id if supplier_obj else None,
         created_by=user_id,
         subtotal=subtotal,
         total=total,
@@ -130,7 +124,7 @@ def sync_offline_purchase(
     db.add(invoice)
     db.flush()  # نحتاج invoice.id قبل حركات المخزون
 
-    # ── خصم المخزون — لو نقص، ما نرفض الفاتورة، منعلّمها للمراجعة ──
+    # ── زيادة المخزون (شراء يزيد المخزون) ──────────────────────
     review_notes = list(skipped_notes)
     for item, product in zip(items_db, products_by_item):
         try:
@@ -144,15 +138,10 @@ def sync_offline_purchase(
                 user_id=user_id,
                 invoice_id=invoice.id,
                 unit_cost=item.cost_price,
-                notes="بيع بالآجل أوفلاين",
+                notes="شراء أوفلاين",
             )
         except ValueError as e:
             review_notes.append(str(e))
-
-    # ── تحديث دين العميل (للبيع الآجل فقط) ─────────────────────
-    # البضاعة طلعت فعلاً من المحل وقت البيع الأوفلاين — الدين حقيقي
-    if supplier and invoice.remaining_amount > 0:
-        supplier.current_debt += invoice.remaining_amount
 
     if review_notes:
         invoice.needs_review = True

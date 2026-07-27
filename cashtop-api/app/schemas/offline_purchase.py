@@ -6,11 +6,11 @@ from typing import List, Optional
 from pydantic import BaseModel, field_validator
 
 
-class OfflinepurchaseItemIn(BaseModel):
+class OfflinePurchaseItemIn(BaseModel):
     product_id: int
     quantity: float
     unit_type: str = "piece"
-    unit_price: float  # يجي من الجهاز مباشرة (نفس ثقة override بالفاتورة الأونلاين)
+    unit_price: float
 
     @field_validator("quantity")
     @classmethod
@@ -27,11 +27,11 @@ class OfflinepurchaseItemIn(BaseModel):
         return v
 
 
-class OfflinepurchaseIn(BaseModel):
+class OfflinePurchaseIn(BaseModel):
     id: str  # UUID يتولّد بالجهاز — بيصير Invoice.client_uuid
     supplier_id: Optional[int] = None
-    payment_method: str = "credit"
-    items: List[OfflinepurchaseItemIn]
+    payment_method: str = "cash"
+    items: List[OfflinePurchaseItemIn]
     client_created_at: datetime
 
     @field_validator("items")
@@ -42,29 +42,17 @@ class OfflinepurchaseIn(BaseModel):
         return v
 
 
-class OfflinepurchasePushRequest(BaseModel):
-    purchases: List[OfflinepurchaseIn]
+class OfflinePurchasePushRequest(BaseModel):
+    purchases: List[OfflinePurchaseIn]
 
 
 class OfflinePurchaseResult(BaseModel):
-    id: str  # نفس الـ client uuid — عشان الجهاز يعرف يطابقه مع سجله المحلي
+    id: str
     server_invoice_id: Optional[int] = None
     status: str  # "accepted" | "already_applied" | "rejected"
     needs_review: bool = False
     reason: Optional[str] = None
 
 
-class OfflinepurchasePushResponse(BaseModel):
+class OfflinePurchasePushResponse(BaseModel):
     results: List[OfflinePurchaseResult]
-
-
-class NeedsReviewInvoiceOut(BaseModel):
-    id: int
-    invoice_number: str
-    supplier_id: Optional[int]
-    total: float
-    review_notes: Optional[str]
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
