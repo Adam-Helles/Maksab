@@ -8,13 +8,11 @@ import type { ProductFormValues } from '../../src/components/ProductForm';
 import { Colors, Fonts, Spacing } from '../../src/types/theme';
 import { productsApi } from '../../src/api';
 import { recordNewProductLocal, runProductSync } from '../../src/db/productsCache';
-import { useNetInfo } from '@react-native-community/netinfo';
+import { isBackendReachable } from '../../src/api/client';
 
 export default function NewProductScreen() {
   const router = useRouter();
   const { barcode } = useLocalSearchParams<{ barcode?: string }>();
-
-  const netInfo = useNetInfo();
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }}>
@@ -38,9 +36,11 @@ export default function NewProductScreen() {
           const payload = formValuesToPayload(values);
           const local_uuid = recordNewProductLocal(payload as any);
           
-          if (netInfo.isConnected) {
-            runProductSync().catch(() => {});
-          }
+          isBackendReachable().then((online) => {
+            if (online) {
+              runProductSync().catch(() => {});
+            }
+          });
 
           // Generate a fake numeric ID to redirect to details page or just go back
           const fakeId = -1 * parseInt(local_uuid.substring(0, 8), 16);

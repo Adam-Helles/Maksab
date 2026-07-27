@@ -10,7 +10,7 @@ import { productsApi } from '../../../src/api';
 import type { Product } from '../../../src/types';
 import type { ProductFormValues } from '../../../src/components/ProductForm';
 import { getProductCache, localProductToProduct, updateProductLocal, runProductSync } from '../../../src/db/productsCache';
-import { useNetInfo } from '@react-native-community/netinfo';
+import { isBackendReachable } from '../../../src/api/client';
 
 export default function EditProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -18,7 +18,6 @@ export default function EditProductScreen() {
   const productId = Number(id);
 
   const [initialValues, setInitialValues] = useState<ProductFormValues | null>(null);
-  const netInfo = useNetInfo();
 
   useEffect(() => {
     const local = getProductCache(productId);
@@ -73,9 +72,11 @@ export default function EditProductScreen() {
              is_active: payload.is_active ? 1 : 0
           } as any);
 
-          if (netInfo.isConnected) {
-            runProductSync().catch(() => {});
-          }
+          isBackendReachable().then((online) => {
+            if (online) {
+              runProductSync().catch(() => {});
+            }
+          });
 
           router.replace({ pathname: '/product/[id]', params: { id: String(productId) } });
         }}

@@ -8,7 +8,7 @@ import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
 import { productsApi } from '../../src/api';
 import type { Product } from '../../src/types';
 import { getProductCache, localProductToProduct, updateProductLocal, runProductSync } from '../../src/db/productsCache';
-import { useNetInfo } from '@react-native-community/netinfo';
+import { isBackendReachable } from '../../src/api/client';
 
 export default function ProductDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -18,8 +18,6 @@ export default function ProductDetailsScreen() {
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [adjusting, setAdjusting] = useState(false);
-
-  const netInfo = useNetInfo();
 
   const load = useCallback(async () => {
     try {
@@ -46,11 +44,12 @@ export default function ProductDetailsScreen() {
     if (!product) return;
     setAdjusting(true);
     try {
-      if (product.id > 0 && netInfo.isConnected) {
+      const isOnline = await isBackendReachable();
+      if (product.id > 0 && isOnline) {
         await productsApi.adjustStock(product.id, change, change > 0 ? 'تعديل يدوي - إضافة' : 'تعديل يدوي - خصم');
       }
       updateProductLocal(product.id, { stock_quantity: product.stock_quantity + change });
-      if (netInfo.isConnected) { runProductSync().catch(() => {}); }
+      if (isOnline) { runProductSync().catch(() => {}); }
       await load();
     } catch (e: any) {
       Alert.alert('خطأ', e?.response?.data?.detail || 'تعذّر تعديل المخزون');
@@ -70,8 +69,9 @@ export default function ProductDetailsScreen() {
           text: 'تأكيد', style: 'destructive',
           onPress: async () => {
             try {
+              const isOnline = await isBackendReachable();
               updateProductLocal(product.id, { is_active: product.is_active ? 0 : 1 });
-              if (netInfo.isConnected) { runProductSync().catch(() => {}); }
+              if (isOnline) { runProductSync().catch(() => {}); }
               await load();
             } catch {
               Alert.alert('خطأ', 'تعذّر تنفيذ العملية');
