@@ -78,11 +78,22 @@ export default function ScanScreen() {
     }
   }, [addItem]);
 
-  // ── وضع المخزون: الاستعلام من السيرفر ──────────────────
+  // ── وضع المخزون: البحث من الكاش أولاً، فالسيرفر فولباك ──────────
   const lookupBarcode = useCallback(async (code: string) => {
     setLooking(true);
     setScanning(false);
     try {
+      // أولاً: ابحث في الكاش المحلي (يعمل أونلاين وأوفلاين)
+      const cached = searchProductsCache(code, 1);
+      const local = cached[0];
+
+      if (local) {
+        Vibration.vibrate(80);
+        router.push({ pathname: '/product/[id]', params: { id: String(local.id) } });
+        return;
+      }
+
+      // ثانياً: إذا ما وجد محلياً — جرب السيرفر (إن وُجد إنترنت)
       const result: any = await productsApi.getByBarcode(code);
       const product = result?.product ?? result;
       if (product?.id) {

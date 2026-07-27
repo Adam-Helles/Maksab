@@ -10,8 +10,8 @@ import { useAuthStore } from '../../src/store/authStore';
 import { StatCard, Card, LoadingScreen, Badge } from '../../src/components/ui';
 import { Colors, Spacing, Fonts, Radius } from '../../src/types/theme';
 import type { DashboardSummary } from '../../src/types';
-
 import { isBackendReachable } from '../../src/api/client';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width } = Dimensions.get('window');
 
@@ -21,22 +21,43 @@ export default function DashboardScreen() {
   const [loading,   setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [isOnline,  setIsOnline]  = useState(true);
+  const [isFromCache, setIsFromCache] = useState(false);
   const { user, logout } = useAuthStore();
 
+  const CACHE_KEY_SUMMARY  = 'dashboard_summary_cache';
+  const CACHE_KEY_TOPS     = 'dashboard_tops_cache';
+
   const fetch = useCallback(async () => {
-    try {
-      const [summary, tops] = await Promise.all([
-        dashboardApi.summary(),
-        dashboardApi.chartTopProducts(30, 5),
-      ]);
-      setData(summary);
-      setTopProds(tops);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+    const online = await isBackendReachable();
+    setIsOnline(online);
+
+    if (online) {
+      try {
+        const [summary, tops] = await Promise.all([
+          dashboardApi.summary(),
+          dashboardApi.chartTopProducts(30, 5),
+        ]);
+        setData(summary);
+        setTopProds(tops);
+        setIsFromCache(false);
+        // حفظ آخر نتيجة في الكاش
+        await AsyncStorage.setItem(CACHE_KEY_SUMMARY, JSON.stringify(summary));
+        await AsyncStorage.setItem(CACHE_KEY_TOPS, JSON.stringify(tops));
+      } catch (e) {
+        console.error(e);
+      }
+    } else {
+      // أوفلاين: حمل آخر بيانات محفوظة
+      try {
+        const cachedSummary = await AsyncStorage.getItem(CACHE_KEY_SUMMARY);
+        const cachedTops    = await AsyncStorage.getItem(CACHE_KEY_TOPS);
+        if (cachedSummary) { setData(JSON.parse(cachedSummary)); setIsFromCache(true); }
+        if (cachedTops)    { setTopProds(JSON.parse(cachedTops)); }
+      } catch {}
     }
+
+    setLoading(false);
+    setRefreshing(false);
   }, []);
 
   useEffect(() => { 
@@ -92,6 +113,17 @@ export default function DashboardScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
       >
+        {/* شارة أوفلاين عند عرض بيانات مخزنة */}
+        {isFromCache && (
+          <View style={{ backgroundColor: '#F59E0B', padding: 8, marginHorizontal: Spacing.lg, marginBottom: Spacing.sm,
+                          borderRadius: 8, flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="cloud-offline-outline" size={15} color="white" />
+            <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
+              تعذّر الاتصال — يعرض آخر بيانات محفوظة. اسحب للتحديث.
+            </Text>
+          </View>
+        )}
+
         {/* ── بطاقات اليوم ─────────────────────────────── */}
         <Text style={styles.sectionTitle}>إحصائيات اليوم</Text>
         <View style={styles.statsRow}>

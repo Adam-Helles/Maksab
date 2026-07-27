@@ -90,36 +90,21 @@ export default function POSScreen() {
     return () => { mounted = false; };
   }, []);
 
-  // ── Product search (أونلاين من السيرفر، أوفلاين من الكاش) ─
+  // ── Product search — كاش أولاً دائماً (فوري بدون إنترنت) ─
   useEffect(() => {
     if (!search.trim()) { setResults([]); return; }
     setSearching(true);
-    const t = setTimeout(async () => {
+    const t = setTimeout(() => {
       try {
-        const online = await isBackendReachable();
-        setIsOnline(online);
-
-        if (online) {
-          const data = await productsApi.list({ search: search.trim(), limit: 8 });
-          setResults(data);
-        } else {
-          const cached = searchProductsCache(search.trim(), 8);
-          setResults(cached.map(localProductToProduct));
-        }
+        // دائماً من الكاش المحلي — فوري وبدون إنترنت
+        const cached = searchProductsCache(search.trim(), 10);
+        setResults(cached.map(localProductToProduct));
       } catch {
-        // ⚠️ إصلاح: قبل هيك كان استدعاء searchProductsCache هون بدون
-        // try/catch خاص فيه — لو رمى خطأ ثاني، كان يضيع بصمت تام
-        // (unhandled rejection) وما كنا نعرف إنه صار.
-        try {
-          const cached = searchProductsCache(search.trim(), 8);
-          setResults(cached.map(localProductToProduct));
-        } catch {
-          setResults([]);
-        }
+        setResults([]);
       } finally {
         setSearching(false);
       }
-    }, 300);
+    }, 200);
     return () => clearTimeout(t);
   }, [search]);
 

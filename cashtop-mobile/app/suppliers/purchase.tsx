@@ -6,6 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { Button, Input, Card, LoadingScreen } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
 import { suppliersApi, productsApi, invoicesApi } from '../../src/api';
+import { searchSuppliersCache, localSupplierToSupplier } from '../../src/db/supplierSync';
+import { searchProductsCache, localProductToProduct } from '../../src/db/productsCache';
 import type { Supplier, Product } from '../../src/types';
 
 export default function PurchaseInvoiceScreen() {
@@ -36,15 +38,17 @@ export default function PurchaseInvoiceScreen() {
   useEffect(() => {
     async function loadData() {
       try {
-        const [sups, prods] = await Promise.all([
-          suppliersApi.list(),
-          productsApi.list({ limit: 200 })
-        ]);
-        setSuppliers(sups);
-        setProducts(prods);
+        // تحميل من الكاش المحلي أولاً — فوري، بدون إنترنت
+        const localSups = searchSuppliersCache('', 200)
+          .filter((s): s is Supplier => !('isPending' in s && s.isPending))
+          .map(s => localSupplierToSupplier(s as any));
+        setSuppliers(localSups);
+
+        const localProds = searchProductsCache('', 500).map(localProductToProduct);
+        setProducts(localProds);
 
         if (supplierId) {
-          const s = sups.find(x => x.id === Number(supplierId));
+          const s = localSups.find(x => x.id === Number(supplierId));
           if (s) setSelectedSupplier(s);
         }
       } catch (e) {
