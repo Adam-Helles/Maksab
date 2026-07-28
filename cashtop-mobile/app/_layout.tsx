@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import * as Updates from 'expo-updates';
 import { useAuthStore } from '../src/store/authStore';
 import { initDatabase } from '../src/db/database';
 import { initCustomerTables } from '../src/db/customerSync';
@@ -17,6 +18,24 @@ export default function RootLayout() {
   const { isAuthenticated, isLoading, restoreSession, isSubscriptionExpired, daysUntilExpiry } = useAuthStore();
   const router  = useRouter();
   const segments = useSegments();
+
+  // تحقق من التحديثات الهوائية فور فتح التطبيق وطبّقها فوراً
+  useEffect(() => {
+    async function applyOTAUpdateIfAvailable() {
+      try {
+        if (!__DEV__) {
+          const update = await Updates.checkForUpdateAsync();
+          if (update.isAvailable) {
+            await Updates.fetchUpdateAsync();
+            await Updates.reloadAsync();
+          }
+        }
+      } catch (e) {
+        // تجاهل أخطاء التحديث (مثلاً عند انقطاع الإنترنت)
+      }
+    }
+    applyOTAUpdateIfAvailable();
+  }, []);
 
   // تهيئة قاعدة البيانات المحلية (SQLite) عند بدء التطبيق
   useEffect(() => {

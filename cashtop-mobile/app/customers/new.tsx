@@ -28,11 +28,11 @@ export default function NewCustomerScreen() {
     }
     setNameError('');
 
-    const payload: Partial<Customer> = {
+    const payload: any = {
       name: name.trim(),
-      phone: phone.trim() || undefined,
-      email: email.trim() || undefined,
-      address: address.trim() || undefined,
+      phone: phone.trim() ? phone.trim() : null,
+      email: email.trim() ? email.trim() : null,
+      address: address.trim() ? address.trim() : null,
       credit_limit: creditLimit.trim() ? Number(creditLimit) : 0,
     };
 

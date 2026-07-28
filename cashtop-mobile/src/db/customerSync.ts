@@ -106,7 +106,7 @@ export function initCustomerTables() {
 export function upsertCustomerCache(c: {
   id: number; name: string; phone?: string | null; phone2?: string | null;
   email?: string | null; address?: string | null; notes?: string | null;
-  credit_limit: number; current_debt: number; is_active: boolean; updated_at: string;
+  credit_limit: number; current_debt: number; is_active: boolean; updated_at?: string;
 }) {
   db.runSync(
     `INSERT INTO customers_cache
@@ -127,7 +127,7 @@ export function upsertCustomerCache(c: {
     [
       c.id, c.name, c.phone ?? null, c.phone2 ?? null, c.email ?? null,
       c.address ?? null, c.notes ?? null, c.credit_limit, c.current_debt,
-      c.is_active ? 1 : 0, c.updated_at,
+      c.is_active ? 1 : 0, c.updated_at || (c as any).created_at || new Date().toISOString(),
     ]
   );
 }

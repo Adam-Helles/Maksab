@@ -8,7 +8,7 @@ import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
 import { customersApi } from '../../src/api';
 import type { Customer } from '../../src/types';
 import { isBackendReachable } from '../../src/api/client';
-import { searchCustomersCache, localCustomerToCustomer } from '../../src/db/customerSync';
+import { searchCustomersCache, localCustomerToCustomer, runCustomerSync } from '../../src/db/customerSync';
 
 export default function CustomersScreen() {
   const router = useRouter();
@@ -23,6 +23,11 @@ export default function CustomersScreen() {
     try {
       const isOnline = await isBackendReachable();
       if (isOnline) {
+        try {
+          await runCustomerSync();
+        } catch (syncErr) {
+          console.log('Customer sync error:', syncErr);
+        }
         const data = await customersApi.list({
           search: search.trim() || undefined,
           has_debt: debtOnly || undefined,
