@@ -133,6 +133,27 @@ export function upsertCustomerCache(c: {
 }
 
 export function getCustomerCache(id: number): LocalCustomer | null {
+  if (id < 0) {
+    const pending = getPendingNewCustomers();
+    const found = pending.find(p => (-1 * parseInt(p.local_id.substring(0, 8), 16)) === id);
+    if (found) {
+      return {
+        id: id,
+        name: found.name,
+        phone: found.phone,
+        phone2: found.phone2,
+        email: found.email,
+        address: found.address,
+        notes: found.notes,
+        credit_limit: found.credit_limit,
+        current_debt: 0,
+        is_active: 1,
+        updated_at: found.client_created_at,
+        profile_dirty: 0,
+      };
+    }
+  }
+
   return (
     db.getFirstSync<LocalCustomer>(`SELECT * FROM customers_cache WHERE id = ?;`, [id]) ?? null
   );
@@ -337,7 +358,7 @@ export async function runCustomerSync() {
   let newCustomersSynced = 0;
   for (const pc of pendingNewCustomers) {
     try {
-      await api.post('/customers/', {
+      const resp = await api.post('/customers/', {
         name: pc.name,
         phone: pc.phone,
         phone2: pc.phone2,
@@ -346,6 +367,14 @@ export async function runCustomerSync() {
         notes: pc.notes,
         credit_limit: pc.credit_limit,
       });
+      
+      const newRealId = resp.data.id;
+      const fakeId = -1 * parseInt(pc.local_id.substring(0, 8), 16);
+      
+      db.runSync(`UPDATE pending_payments SET customer_id = ? WHERE customer_id = ?;`, [newRealId, fakeId]);
+      db.runSync(`UPDATE pending_debts SET customer_id = ? WHERE customer_id = ?;`, [newRealId, fakeId]);
+      db.runSync(`UPDATE pending_offline_sales SET customer_id = ? WHERE customer_id = ?;`, [newRealId, fakeId]);
+
       markPendingCustomerSynced(pc.local_id);
       newCustomersSynced++;
     } catch (e) {
@@ -354,8 +383,8 @@ export async function runCustomerSync() {
   }
 
   // 2. مزامنة الدفعات والديون (لا تتم لمن يحملون ID محلي حتى يتم تحديث الـ ID بعد سحب التحديثات)
-  const pendingPayments = getPendingPayments();
-  const pendingDebts = getPendingDebts();
+  const pendingPayments = getPendingPayments().filter(p => p.customer_id > 0);
+  const pendingDebts = getPendingDebts().filter(d => d.customer_id > 0);
   
   if (pendingPayments.length > 0) {
     const result = await api.post('/sync/customers/payments/push', {
@@ -398,7 +427,7 @@ export async function runCustomerSync() {
   }
 
   // 3. مزامنة الملفات المعدلة
-  const dirtyProfiles = getUnsyncedProfiles();
+  const dirtyProfiles = getUnsyncedProfiles().filter(c => c.id > 0);
   if (dirtyProfiles.length > 0) {
     const result = await api.post('/sync/customers/profile/push', {
       profiles: dirtyProfiles.map((c) => ({

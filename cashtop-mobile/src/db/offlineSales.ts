@@ -121,7 +121,7 @@ function markOfflineSaleResult(id: string, needsReview: boolean, reviewNotes: st
  * — إعادة الاستدعاء بعد فشل جزئي آمنة (السيرفر بيتجاهل أي id اتزامن قبل).
  */
 export async function syncOfflineSales() {
-  const pending = getPendingOfflineSales();
+  const pending = getPendingOfflineSales().filter(s => s.customer_id === null || s.customer_id > 0);
   if (pending.length === 0) {
     return { pushed: 0, needsReview: 0 };
   }
