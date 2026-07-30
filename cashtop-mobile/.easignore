@@ -1,0 +1,9 @@
+node_modules
+android
+ios
+.expo
+dist
+__tests__
+coverage
+*.log
+*.map
