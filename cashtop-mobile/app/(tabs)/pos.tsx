@@ -250,6 +250,11 @@ export default function POSScreen() {
         });
       }
       Alert.alert(asDraft ? 'تم حفظ المسودة' : 'تمت عملية البيع ✅', invoiceLabel, shareButtons);
+      
+      // Update customer local cache in the background to reflect new debt immediately
+      if (paymentMethod === 'credit' && customerId) {
+        runCustomerSync().catch(() => {});
+      }
     } catch (e: any) {
       // ⚠️ client.ts يحوّل كل أخطاء Axios لـ new Error(message) عربي —
       // لذلك الرسالة موجودة دائماً في e.message مباشرة.
@@ -294,7 +299,7 @@ export default function POSScreen() {
           />
           <Text style={{ fontSize: 12, fontWeight: '600', color: !isOnline ? '#8A6D00' : '#1565C0' }}>
             {!isOnline
-              ? 'وضع أوفلاين — البيع مدعوم بطريقة "آجل" فقط'
+              ? 'وضع أوفلاين — المبيعات ستتزامن لاحقاً'
               : `يتم مزامنة ${pendingOfflineSales} عملية بيع أوفلاين معلّقة...`}
           </Text>
         </View>
@@ -424,7 +429,7 @@ export default function POSScreen() {
             <View style={{ flexDirection: 'row-reverse', gap: 8, marginBottom: Spacing.md }}>
               {PAYMENT_OPTIONS.map(opt => {
                 const active = paymentMethod === opt.value;
-                const disabled = !isOnline && opt.value !== 'credit';
+                const disabled = false; // Allow all payment methods offline
                 return (
                   <TouchableOpacity
                     key={opt.value}

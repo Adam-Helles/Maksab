@@ -265,7 +265,35 @@ export function localProductToProduct(lp: LocalProduct): Product {
 import * as Crypto from 'expo-crypto';
 
 export function getProductCache(id: number): LocalProduct | null {
-  return db.getFirstSync<LocalProduct>(`SELECT * FROM products_cache WHERE id = ?;`, [id]);
+  const cached = db.getFirstSync<LocalProduct>(`SELECT * FROM products_cache WHERE id = ?;`, [id]);
+  if (cached) return cached;
+  
+  // Check if it's a pending offline product (negative fake ID)
+  if (id < 0) {
+    const pendingAll = db.getAllSync<LocalPendingProduct>(`SELECT * FROM pending_new_products WHERE synced = 0;`);
+    for (const p of pendingAll) {
+      const fakeId = -1 * parseInt(p.local_id.substring(0, 8), 16);
+      if (fakeId === id) {
+        return {
+          id: fakeId,
+          name: p.name,
+          name_ar: p.name_ar,
+          barcode_piece: p.barcode_piece,
+          barcode_carton: p.barcode_carton,
+          retail_price: p.retail_price,
+          carton_price: p.carton_price,
+          cost_price: p.cost_price,
+          tax_rate: p.tax_rate,
+          pieces_per_carton: p.pieces_per_carton,
+          stock_quantity: p.stock_quantity,
+          is_active: 1,
+          updated_at: p.client_created_at,
+          profile_dirty: 0,
+        };
+      }
+    }
+  }
+  return null;
 }
 
 export function recordNewProductLocal(data: Partial<LocalPendingProduct>) {

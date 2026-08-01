@@ -13,7 +13,7 @@ export const setServerIp = async (ip: string) => {};
  * فحص "أونلاين" الحقيقي: هل التطبيق قادر يوصل للباكيند فعلياً.
  * Timeout قصير (2.5 ثانية) عشان ما يوقف الـ UI.
  */
-export async function isBackendReachable(timeoutMs = 2500): Promise<boolean> {
+export async function isBackendReachable(timeoutMs = 5000): Promise<boolean> {
   try {
     await axios.get(`${ROOT_URL}/health`, { timeout: timeoutMs });
     return true;

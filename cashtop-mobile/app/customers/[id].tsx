@@ -193,7 +193,7 @@ export default function CustomerStatementScreen() {
   if (!customer) return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background, justifyContent: 'center', alignItems: 'center' }}>
       <Text style={{ fontSize: 16, color: Colors.gray500, textAlign: 'center', padding: 32 }}>
-        ⚠️ لم يتم العثور على بيانات العميل{`\n`}تأكد من الاتصال بالإنترنت واضغط تحديث
+        ⚠️ لم يتم العثور على بيانات العميل (V2 ID: {customerId}){`\n`}تأكد من الاتصال بالإنترنت واضغط تحديث
       </Text>
       <TouchableOpacity onPress={load} style={{ marginTop: 16, padding: 12, backgroundColor: Colors.primary, borderRadius: 8 }}>
         <Text style={{ color: '#fff', fontWeight: '700' }}>إعادة المحاولة</Text>

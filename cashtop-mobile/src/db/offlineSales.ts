@@ -81,6 +81,14 @@ export function recordOfflineSaleLocal(
     decrementCachedStock(item.product_id, qtyInPieces);
   }
 
+  // Update customer debt if it's a credit sale
+  if (paymentMethod === 'credit' && customerId) {
+    db.runSync(
+      `UPDATE customers_cache SET current_debt = current_debt + ? WHERE id = ?;`,
+      [total, customerId]
+    );
+  }
+
   return id;
 }
 
