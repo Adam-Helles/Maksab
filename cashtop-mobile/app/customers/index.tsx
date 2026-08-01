@@ -8,7 +8,7 @@ import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
 import { customersApi } from '../../src/api';
 import type { Customer } from '../../src/types';
 import { isBackendReachable } from '../../src/api/client';
-import { searchCustomersCache, localCustomerToCustomer, runCustomerSync } from '../../src/db/customerSync';
+import { searchCustomersCache, localCustomerToCustomer, runCustomerSync, upsertCustomerCache } from '../../src/db/customerSync';
 
 export default function CustomersScreen() {
   const router = useRouter();
@@ -32,14 +32,39 @@ export default function CustomersScreen() {
           search: search.trim() || undefined,
           has_debt: debtOnly || undefined,
         });
+
+        // ── تحديث الكاش المحلي بقيم الديون الحقيقية من السيرفر ──────────
+        // هذا يضمن توافق البيانات بين الأونلاين والأوفلاين دائماً.
+        // بعد كل جلب ناجح من API، نحفظ current_debt الصحيح محلياً فوراً.
+        try {
+          for (const c of data) {
+            upsertCustomerCache({
+              id: c.id,
+              name: c.name,
+              phone: c.phone,
+              phone2: (c as any).phone2,
+              email: (c as any).email,
+              address: (c as any).address,
+              notes: (c as any).notes,
+              credit_limit: c.credit_limit,
+              current_debt: c.current_debt,
+              is_active: c.is_active,
+              updated_at: (c as any).updated_at || new Date().toISOString(),
+            });
+          }
+        } catch (cacheErr) {
+          console.log('Cache update error:', cacheErr);
+        }
+
         setCustomers(data);
       } else {
+        // أوفلاين: نقرأ من الكاش المحلي المحدَّث
         let cached = searchCustomersCache(search);
         if (debtOnly) cached = cached.filter(c => c.current_debt > 0);
         setCustomers(cached.map(localCustomerToCustomer));
       }
     } catch {
-      // ignore, keep previous list or fallback
+      // فشل الاتصال: نرجع للكاش المحلي
       try {
         let cached = searchCustomersCache(search);
         if (debtOnly) cached = cached.filter(c => c.current_debt > 0);
