@@ -5,10 +5,29 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Input, Badge, EmptyState } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
-import { customersApi } from '../../src/api';
 import type { Customer } from '../../src/types';
 import { isBackendReachable } from '../../src/api/client';
-import { searchCustomersCache, localCustomerToCustomer, runCustomerSync, upsertCustomerCache } from '../../src/db/customerSync';
+import { getAllCustomers, searchCustomers, LocalCustomer } from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
+
+// تحويل العميل المحلي إلى النوع العام للواجهة
+function toCustomer(c: LocalCustomer): Customer {
+  return {
+    id: c.id,
+    name: c.name,
+    phone: c.phone || undefined,
+    phone2: c.phone2 || undefined,
+    email: c.email || undefined,
+    address: c.address || undefined,
+    credit_limit: c.credit_limit,
+    current_debt: c.current_debt,
+    available_credit: c.credit_limit === 0 ? -1 : Math.max(0, c.credit_limit - c.current_debt),
+    can_buy_on_credit: c.credit_limit === 0 || c.current_debt < c.credit_limit,
+    loyalty_points: 0,
+    is_active: c.is_active === 1,
+    created_at: c.created_at,
+  };
+}
 
 export default function CustomersScreen() {
   const router = useRouter();
@@ -18,68 +37,31 @@ export default function CustomersScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setLoading(true);
-    try {
-      const isOnline = await isBackendReachable();
-      if (isOnline) {
-        try {
-          await runCustomerSync();
-        } catch (syncErr) {
-          console.log('Customer sync error:', syncErr);
-        }
-        const data = await customersApi.list({
-          search: search.trim() || undefined,
-          has_debt: debtOnly || undefined,
-        });
-
-        // ── تحديث الكاش المحلي بقيم الديون الحقيقية من السيرفر ──────────
-        // هذا يضمن توافق البيانات بين الأونلاين والأوفلاين دائماً.
-        // بعد كل جلب ناجح من API، نحفظ current_debt الصحيح محلياً فوراً.
-        try {
-          for (const c of data) {
-            upsertCustomerCache({
-              id: c.id,
-              name: c.name,
-              phone: c.phone,
-              phone2: (c as any).phone2,
-              email: (c as any).email,
-              address: (c as any).address,
-              notes: (c as any).notes,
-              credit_limit: c.credit_limit,
-              current_debt: c.current_debt,
-              is_active: c.is_active,
-              updated_at: (c as any).updated_at || new Date().toISOString(),
-            });
-          }
-        } catch (cacheErr) {
-          console.log('Cache update error:', cacheErr);
-        }
-
-        setCustomers(data);
-      } else {
-        // أوفلاين: نقرأ من الكاش المحلي المحدَّث
-        let cached = searchCustomersCache(search);
-        if (debtOnly) cached = cached.filter(c => c.current_debt > 0);
-        setCustomers(cached.map(localCustomerToCustomer));
-      }
-    } catch {
-      // فشل الاتصال: نرجع للكاش المحلي
-      try {
-        let cached = searchCustomersCache(search);
-        if (debtOnly) cached = cached.filter(c => c.current_debt > 0);
-        setCustomers(cached.map(localCustomerToCustomer));
-      } catch {}
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
+  const loadFromLocal = useCallback(() => {
+    // القراءة الفورية من SQLite
+    let local: LocalCustomer[];
+    if (search.trim()) {
+      local = searchCustomers(search.trim(), 500);
+    } else {
+      local = getAllCustomers();
     }
+    if (debtOnly) local = local.filter(c => c.current_debt > 0);
+    setCustomers(local.map(toCustomer));
+    setLoading(false);
+    setRefreshing(false);
   }, [search, debtOnly]);
 
+  // تحميل فوري من المحلي + مزامنة خلفية
   useEffect(() => {
-    const t = setTimeout(() => load(true), 300);
-    return () => clearTimeout(t);
-  }, [load]);
+    loadFromLocal();
+
+    // مزامنة في الخلفية بدون انتظار
+    isBackendReachable().then(online => {
+      if (online) {
+        runFullSync().then(() => loadFromLocal()).catch(() => {});
+      }
+    });
+  }, [loadFromLocal]);
 
   const totalDebt = customers.reduce((s, c) => s + c.current_debt, 0);
 
@@ -137,13 +119,13 @@ export default function CustomersScreen() {
       ) : (
         <FlatList
           data={customers}
-          keyExtractor={c => String(c.id)}
+          keyExtractor={c => c.id}
           contentContainerStyle={{ padding: Spacing.lg, paddingBottom: 100, gap: Spacing.sm }}
           refreshControl={<RefreshControl refreshing={refreshing}
-                             onRefresh={() => { setRefreshing(true); load(); }} colors={[Colors.primary]} />}
+                             onRefresh={() => { setRefreshing(true); loadFromLocal(); }} colors={[Colors.primary]} />}
           renderItem={({ item }) => (
             <TouchableOpacity
-              onPress={() => router.push({ pathname: '/customers/[id]', params: { id: String(item.id) } })}
+              onPress={() => router.push({ pathname: '/customers/[id]', params: { id: item.id } })}
               style={{
                 backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.md,
                 flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between',

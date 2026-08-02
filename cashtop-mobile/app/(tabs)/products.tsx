@@ -3,57 +3,93 @@ import {
   View, Text, FlatList, TouchableOpacity, RefreshControl, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Input, Badge, EmptyState } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
-import { searchProductsCache, localProductToProduct } from '../../src/db/productsCache';
-import { searchCategoriesCache } from '../../src/db/categorySync';
-import type { Category } from '../../src/types';
+import { getAllProducts, searchProducts, getAllCategories, LocalProduct, LocalCategory } from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
+import { isBackendReachable } from '../../src/api/client';
+import type { Product } from '../../src/types';
+
+// مساعد للتحويل
+function localProductToUI(p: LocalProduct): Product {
+  return {
+    id: p.id,
+    name: p.name,
+    name_ar: p.name_ar || undefined,
+    barcode_piece: p.barcode_piece || undefined,
+    barcode_carton: p.barcode_carton || undefined,
+    base_unit: 'piece',
+    pieces_per_carton: p.pieces_per_carton,
+    cost_price: p.cost_price,
+    retail_price: p.retail_price,
+    wholesale_price: p.retail_price,
+    carton_price: p.carton_price,
+    piece_price_from_carton: p.pieces_per_carton > 0 ? p.carton_price / p.pieces_per_carton : 0,
+    stock_quantity: p.stock_quantity,
+    stock_in_cartons: p.pieces_per_carton > 0 ? p.stock_quantity / p.pieces_per_carton : 0,
+    min_stock_alert: 5,
+    is_low_stock: p.stock_quantity <= 5,
+    profit_margin: p.cost_price > 0 ? ((p.retail_price - p.cost_price) / p.cost_price) * 100 : 0,
+    has_expiry: false,
+    tax_rate: p.tax_rate,
+    is_active: p.is_active === 1,
+    is_featured: false,
+    created_at: p.created_at,
+  };
+}
 
 export default function ProductsScreen() {
   const router = useRouter();
 
   const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<LocalCategory[]>([]);
   const [search, setSearch] = useState('');
-  const [categoryId, setCategoryId] = useState<number | undefined>(undefined);
+  const [categoryId, setCategoryId] = useState<string | undefined>(undefined);
   const [lowStockOnly, setLowStockOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchProducts = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setLoading(true);
+  const loadFromLocal = useCallback(() => {
     try {
-      const cached = searchProductsCache(search, 200);
-      let filtered = cached;
-      if (categoryId) filtered = filtered.filter(p => p.category_id === categoryId);
-      if (lowStockOnly) filtered = filtered.filter(p => p.stock_quantity <= p.pieces_per_carton * 2); // basic low stock
+      let local: LocalProduct[];
+      if (search.trim()) {
+        local = searchProducts(search.trim(), 200);
+      } else {
+        local = getAllProducts(false); // لا تعرض المحذوفة
+      }
+
+      if (categoryId) local = local.filter(p => p.category_id === categoryId);
+      if (lowStockOnly) local = local.filter(p => p.stock_quantity <= 5);
       
-      setProducts(filtered.map(p => localProductToProduct(p as any)));
+      setProducts(local.map(localProductToUI));
+      setCategories(getAllCategories());
     } catch (e) {
-      console.log('Error loading products from cache:', e);
+      console.log('Error loading products from local db:', e);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, [search, categoryId, lowStockOnly]);
 
-  useEffect(() => {
-    try {
-      const localCats = searchCategoriesCache();
-      setCategories(localCats);
-    } catch(e) {}
-  }, []);
+  useFocusEffect(useCallback(() => {
+    loadFromLocal();
+    
+    isBackendReachable().then(online => {
+      if (online) {
+        runFullSync().then(() => loadFromLocal()).catch(() => {});
+      }
+    });
+  }, [loadFromLocal]));
 
-  useEffect(() => {
-    const t = setTimeout(() => fetchProducts(true), 300); // debounce search
-    return () => clearTimeout(t);
-  }, [fetchProducts]);
-
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    fetchProducts(false);
+    const online = await isBackendReachable();
+    if (online) {
+      await runFullSync().catch(() => {});
+    }
+    loadFromLocal();
   };
 
   return (
@@ -82,7 +118,7 @@ export default function ProductsScreen() {
         />
 
         <FlatList
-          data={[{ id: undefined, label: 'الكل' } as any, ...categories.map(c => ({ id: c.id, label: c.name_ar || c.name }))]}
+          data={[{ id: undefined, label: 'الكل' } as any, ...categories.map(c => ({ id: c.id, label: c.name }))]}
           horizontal
           showsHorizontalScrollIndicator={false}
           keyExtractor={(item, i) => String(item.id ?? 'all') + i}

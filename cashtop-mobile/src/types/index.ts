@@ -5,7 +5,7 @@
 export type UserRole = 'admin' | 'manager' | 'cashier';
 
 export interface User {
-  id: number;
+  id: string;      // UUID
   username: string;
   full_name: string;
   email?: string;
@@ -29,7 +29,7 @@ export interface AuthTokens {
 export type UnitType = 'piece' | 'carton' | 'kg' | 'liter' | 'meter';
 
 export interface Category {
-  id: number;
+  id: string;      // UUID
   name: string;
   name_ar?: string;
   color?: string;
@@ -38,7 +38,7 @@ export interface Category {
 }
 
 export interface Product {
-  id: number;
+  id: string;      // UUID
   name: string;
   name_ar?: string;
   description?: string;
@@ -59,8 +59,8 @@ export interface Product {
   profit_margin: number;
   has_expiry: boolean;
   expiry_date?: string;
-  category_id?: number;
-  supplier_id?: number;
+  category_id?: string;
+  supplier_id?: string;
   tax_rate: number;
   is_active: boolean;
   is_featured: boolean;
@@ -72,9 +72,10 @@ export interface Product {
 // ══════════════════════════════════════════════════════════
 
 export interface Customer {
-  id: number;
+  id: string;      // UUID
   name: string;
   phone?: string;
+  phone2?: string;
   email?: string;
   address?: string;
   credit_limit: number;
@@ -87,12 +88,13 @@ export interface Customer {
 }
 
 export interface Supplier {
-  id: number;
+  id: string;      // UUID
   name: string;
   company?: string;
   phone?: string;
   email?: string;
   balance: number;
+  current_balance?: number;
   is_active: boolean;
   created_at: string;
 }
@@ -107,8 +109,8 @@ export type PaymentStatus  = 'paid' | 'unpaid' | 'partial';
 export type PaymentMethod  = 'cash' | 'card' | 'transfer' | 'credit';
 
 export interface InvoiceItem {
-  id: number;
-  product_id: number;
+  id: string;      // UUID
+  product_id: string;
   product_name?: string;
   quantity: number;
   unit_type: string;
@@ -120,16 +122,17 @@ export interface InvoiceItem {
 }
 
 export interface Invoice {
-  id: number;
+  id: string;      // UUID
   invoice_number: string;
   unique_token: string;
   invoice_type: InvoiceType;
   status: InvoiceStatus;
   payment_status: PaymentStatus;
   payment_method: PaymentMethod;
-  customer_id?: number;
-  supplier_id?: number;
-  created_by: number;
+  customer_id?: string;
+  customer_name?: string;
+  supplier_id?: string;
+  created_by: string;
   subtotal: number;
   discount_percent: number;
   discount_amount: number;

@@ -1,36 +1,35 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Badge, Input, LoadingScreen } from '../../src/components/ui';
-import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
+import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
 import { customersApi } from '../../src/api';
 import {
-  getCustomerCache,
-  upsertCustomerCache,
-  getPendingPayments,
-  getPendingDebts,
-  recordPaymentLocal,
-  recordDebtLocal,
-  updateCustomerProfileLocal,
-  runCustomerSync,
-  type LocalCustomer,
-  type LocalPendingPayment,
-  type LocalPendingDebt,
-} from '../../src/db/customerSync';
+  getCustomerById,
+  upsertCustomer,
+  getPendingDebtPayments,
+  createDebtPayment,
+  createLocalInvoice,
+  updateCustomerDebt,
+  LocalCustomer,
+  LocalInvoice,
+  getInvoicesForCustomer,
+  runInTransaction
+} from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
+import { isBackendReachable } from '../../src/api/client';
 
 export default function CustomerStatementScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const customerId = Number(id);
 
   const [customer, setCustomer] = useState<LocalCustomer | null>(null);
-  const [pendingPayments, setPendingPayments] = useState<LocalPendingPayment[]>([]);
-  const [pendingDebts, setPendingDebts] = useState<LocalPendingDebt[]>([]);
-  const [statement, setStatement] = useState<any>(null);
+  const [invoices, setInvoices] = useState<LocalInvoice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState<'offline' | 'synced' | 'syncing'>('syncing');
+  const [refreshing, setRefreshing] = useState(false);
+
   const [showPay, setShowPay] = useState(false);
   const [payAmount, setPayAmount] = useState('');
   const [paying, setPaying] = useState(false);
@@ -40,73 +39,46 @@ export default function CustomerStatementScreen() {
   const [debtNotes, setDebtNotes] = useState('');
   const [addingDebt, setAddingDebt] = useState(false);
 
-  // ── تعديل بيانات العميل ────────────────────────────────
   const [showEdit, setShowEdit] = useState(false);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editPhone2, setEditPhone2] = useState('');
-  const [editEmail, setEditEmail] = useState('');
   const [editAddress, setEditAddress] = useState('');
-  const [editNotes, setEditNotes] = useState('');
-  const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    setSyncStatus('syncing');
-
-    // 1) حاول تزامن أول (بيحدّث current_debt الحقيقي من السيرفر، وبيدفع
-    //    أي تعديل بروفايل محلي معلّق — بما فيه تعديل بيانات العميل)
-    try {
-      await runCustomerSync();
-      setSyncStatus('synced');
-    } catch {
-      // ما في نت أو فشلت المزامنة — بنكمل بالبيانات المحلية المخزّنة
-      setSyncStatus('offline');
-    }
-
-    // 2) اقرأ من الكاش المحلي دائماً (سواء نجحت المزامنة أو لأ)
-    let cached = getCustomerCache(customerId);
-    setPendingPayments(getPendingPayments(customerId));
-    setPendingDebts(getPendingDebts(customerId));
-
-    // 3) كشف الحساب التفصيلي (سجل الفواتير) — أونلاين فقط حالياً
-    let fetchedStatement: any = null;
-    try {
-      fetchedStatement = await customersApi.statement(customerId);
-      setStatement(fetchedStatement);
-    } catch {
-      setStatement(null);
-    }
-
-    // 4) Fallback: لو العميل ما كان في الكاش المحلي (عميل جديد أو أول مزامنة)
-    //    بنبني بياناته من كشف الحساب الواصل من السيرفر مباشرة بدون ما ننتظر
-    if (!cached && fetchedStatement?.customer_name) {
-      cached = {
-        id: customerId,
-        name: fetchedStatement.customer_name,
-        phone: fetchedStatement.phone ?? null,
-        phone2: null,
-        email: null,
-        address: null,
-        notes: null,
-        credit_limit: fetchedStatement.credit_limit ?? 0,
-        current_debt: fetchedStatement.current_debt ?? 0,
-        is_active: 1,
-        updated_at: new Date().toISOString(),
-        profile_dirty: 0,
-      };
-      // نحفظه محلياً عشان المرة الجاية يكون موجود بالكاش
-      upsertCustomerCache({
-        id: cached.id, name: cached.name, phone: cached.phone,
-        credit_limit: cached.credit_limit, current_debt: cached.current_debt,
-        is_active: true, updated_at: cached.updated_at,
-      });
-    }
-
+  const loadFromLocal = useCallback(() => {
+    if (!id) return;
+    
+    // 1. اقرأ بيانات العميل من SQLite
+    const cached = getCustomerById(id);
     setCustomer(cached);
-    setLoading(false);
-  }, [customerId]);
+    
+    // 2. اقرأ جميع العمليات (فواتير، دفعات، ديون) من SQLite
+    const localInvoices = getInvoicesForCustomer(id);
+    setInvoices(localInvoices);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+    setLoading(false);
+    setRefreshing(false);
+  }, [id]);
+
+  // تحديث الشاشة عند الفتح (من الكاش) ثم محاولة المزامنة
+  useFocusEffect(useCallback(() => {
+    loadFromLocal();
+
+    isBackendReachable().then(online => {
+      if (online) {
+        runFullSync().then(() => loadFromLocal()).catch(() => {});
+      }
+    });
+  }, [loadFromLocal]));
+
+  // سحب للتحديث اليدوي
+  const onRefresh = async () => {
+    setRefreshing(true);
+    const online = await isBackendReachable();
+    if (online) {
+      await runFullSync().catch(() => {});
+    }
+    loadFromLocal();
+  };
 
   const submitPayment = async () => {
     const amount = Number(payAmount);
@@ -116,14 +88,26 @@ export default function CustomerStatementScreen() {
     }
     setPaying(true);
     try {
-      recordPaymentLocal(customerId, amount, 'cash');
+      runInTransaction(() => {
+        // 1. تسجيل دفعة محلياً
+        createDebtPayment({
+          customer_id: id,
+          amount: amount,
+          method: 'cash',
+          notes: 'دفعة سداد دين',
+        });
+        
+        // 2. تحديث رصيد العميل فوراً
+        updateCustomerDebt(id, -amount);
+      });
+      
+      // 3. مزامنة
+      isBackendReachable().then(online => { if (online) runFullSync().catch(() => {}); });
+
       setShowPay(false);
       setPayAmount('');
-      await load();
-      Alert.alert(
-        'تم تسجيل الدفعة ✅',
-        syncStatus === 'offline' ? 'رح تنزامن تلقائياً أول ما يتوفر نت' : undefined
-      );
+      loadFromLocal();
+      Alert.alert('تم تسجيل الدفعة ✅', 'تم الحفظ محلياً وستتم المزامنة.');
     } finally {
       setPaying(false);
     }
@@ -137,281 +121,233 @@ export default function CustomerStatementScreen() {
     }
     setAddingDebt(true);
     try {
-      recordDebtLocal(customerId, amount, debtNotes.trim() || null);
+      runInTransaction(() => {
+        // 1. الدين اليدوي يُسجل كفاتورة آجل وهمية لتظهر في كشف الحساب
+        createLocalInvoice({
+          invoice_number: null,
+          invoice_type: 'sale',
+          status: 'completed',
+          payment_method: 'credit',
+          payment_status: 'unpaid',
+          customer_id: id,
+          customer_name: customer?.name || null,
+          supplier_id: null,
+          subtotal: amount,
+          discount_amount: 0,
+          tax_amount: 0,
+          total: amount,
+          paid_amount: 0,
+          remaining_amount: amount,
+          notes: debtNotes.trim() || 'دين يدوي مسجل من التطبيق',
+          sync_status: 'pending_create'
+        }, [
+          {
+            product_id: 'general-debt', // معرف وهمي لمنتج الدين
+            product_name: 'دين يدوي / عام',
+            quantity: 1,
+            unit_type: 'piece',
+            unit_price: amount,
+            cost_price: 0,
+            pieces_per_carton: 1,
+            total: amount
+          }
+        ]);
+        
+        // 2. تحديث رصيد العميل محلياً
+        updateCustomerDebt(id, amount);
+      });
+      
+      // 3. مزامنة
+      isBackendReachable().then(online => { if (online) runFullSync().catch(() => {}); });
+
       setShowDebt(false);
       setDebtAmount('');
       setDebtNotes('');
-      await load();
-      Alert.alert(
-        'تم تسجيل الدين ✅',
-        syncStatus === 'offline' ? 'رح يتزامن تلقائياً أول ما يتوفر نت' : undefined
-      );
+      loadFromLocal();
+      Alert.alert('تم تسجيل الدين ✅', 'تم الحفظ محلياً وستتم المزامنة.');
     } finally {
       setAddingDebt(false);
     }
   };
 
-  const openEdit = () => {
+  const submitEdit = () => {
     if (!customer) return;
-    setEditName(customer.name ?? '');
-    setEditPhone(customer.phone ?? '');
-    setEditPhone2(customer.phone2 ?? '');
-    setEditEmail(customer.email ?? '');
-    setEditAddress(customer.address ?? '');
-    setEditNotes(customer.notes ?? '');
-    setShowEdit(true);
-  };
-
-  const submitEdit = async () => {
     if (!editName.trim()) {
       Alert.alert('الاسم مطلوب');
       return;
     }
-    setSaving(true);
-    try {
-      updateCustomerProfileLocal(customerId, {
-        name: editName.trim(),
-        phone: editPhone.trim() || null,
-        phone2: editPhone2.trim() || null,
-        email: editEmail.trim() || null,
-        address: editAddress.trim() || null,
-        notes: editNotes.trim() || null,
-      });
-      setShowEdit(false);
-      const wasOffline = syncStatus === 'offline';
-      await load();
-      Alert.alert(
-        'تم حفظ التعديل ✅',
-        wasOffline ? 'رح يتزامن تلقائياً أول ما يتوفر نت' : undefined
-      );
-    } finally {
-      setSaving(false);
-    }
+    
+    upsertCustomer({
+      ...customer,
+      name: editName.trim(),
+      phone: editPhone.trim() || null,
+      address: editAddress.trim() || null,
+      sync_status: 'pending_update', // سيتزامن لاحقاً
+    });
+    
+    isBackendReachable().then(online => { if (online) runFullSync().catch(() => {}); });
+    
+    setShowEdit(false);
+    loadFromLocal();
   };
 
-  if (loading) return <LoadingScreen message="جاري تحميل كشف الحساب..." />;
-  if (!customer) return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background, justifyContent: 'center', alignItems: 'center' }}>
-      <Text style={{ fontSize: 16, color: Colors.gray500, textAlign: 'center', padding: 32 }}>
-        ⚠️ لم يتم العثور على بيانات العميل (V2 ID: {customerId}){`\n`}تأكد من الاتصال بالإنترنت واضغط تحديث
-      </Text>
-      <TouchableOpacity onPress={load} style={{ marginTop: 16, padding: 12, backgroundColor: Colors.primary, borderRadius: 8 }}>
-        <Text style={{ color: '#fff', fontWeight: '700' }}>إعادة المحاولة</Text>
-      </TouchableOpacity>
-    </SafeAreaView>
-  );
+  if (loading) return <LoadingScreen message="جاري التحميل..." />;
+  if (!customer) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ fontSize: 18, color: Colors.gray500 }}>العميل غير موجود</Text>
+      </View>
+    );
+  }
 
-  // سجل الحركات من السيرفر (لو متوفر) + الدفعات المحلية يلي لسا ما انزامنت
-  const serverTransactions: any[] = Array.isArray(statement) ? statement
-    : Array.isArray(statement?.transactions) ? statement.transactions
-    : Array.isArray(statement?.items) ? statement.items
-    : [];
-
-  const pendingAsTransactions = [
-    ...pendingPayments.map((p) => ({
-      id: p.id,
-      type: 'دفعة (لسا ما انزامنت)',
-      amount: -p.amount,
-      date: p.client_created_at,
-      pending: true,
-    })),
-    ...pendingDebts.map((d) => ({
-      id: d.id,
-      type: d.notes || 'دين (لسا ما انزامن)',
-      amount: d.amount,
-      date: d.client_created_at,
-      pending: true,
-    }))
-  ];
-
-  const transactions = [...pendingAsTransactions, ...serverTransactions];
+  // فرز الفواتير تنازلياً
+  const sortedInvoices = [...invoices].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }}>
+      {/* Header */}
       <View style={{
         flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between',
         padding: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border, backgroundColor: Colors.white,
       }}>
         <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="close" size={26} color={Colors.gray600} />
+          <Ionicons name="arrow-back" size={26} color={Colors.gray800} />
         </TouchableOpacity>
-        <Text style={{ fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.primary }}>كشف الحساب</Text>
-        <TouchableOpacity onPress={openEdit}>
-          <Ionicons name="create-outline" size={24} color={Colors.primary} />
+        <Text style={{ fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.primary }}>
+          ملف العميل
+        </Text>
+        <TouchableOpacity onPress={() => {
+          setEditName(customer.name);
+          setEditPhone(customer.phone || '');
+          setEditAddress(customer.address || '');
+          setShowEdit(true);
+        }}>
+          <Ionicons name="create-outline" size={24} color={Colors.gray600} />
         </TouchableOpacity>
       </View>
 
-      {syncStatus === 'offline' && (
-        <View style={{ backgroundColor: '#FEF3C7', padding: 8 }}>
-          <Text style={{ textAlign: 'center', color: '#92400E', fontSize: 12 }}>
-            📡 غير متصل — البيانات المعروضة محلية، رح تنزامن تلقائياً لما يرجع النت
+      <ScrollView 
+        contentContainerStyle={{ paddingBottom: Spacing['3xl'] }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
+      >
+        {/* بطاقة العميل */}
+        <View style={{ backgroundColor: Colors.primary, padding: Spacing.xl, borderBottomLeftRadius: Radius['2xl'], borderBottomRightRadius: Radius['2xl'] }}>
+          <Text style={{ color: Colors.white, fontSize: 24, fontWeight: '800', textAlign: 'right' }}>
+            {customer.name}
           </Text>
-        </View>
-      )}
+          {customer.phone && <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 14, textAlign: 'right', marginTop: 4 }}>📞 {customer.phone}</Text>}
+          
+          <View style={{ backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: Radius.lg, padding: Spacing.md, marginTop: Spacing.lg, flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center' }}>
+            <View>
+              <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>الدين الحالي</Text>
+              <Text style={{ color: Colors.white, fontSize: 28, fontWeight: '800' }}>
+                {customer.current_debt.toFixed(2)} ₪
+              </Text>
+            </View>
+            {customer.credit_limit > 0 && (
+              <View style={{ alignItems: 'flex-start' }}>
+                <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>سقف الدين</Text>
+                <Text style={{ color: Colors.white, fontSize: 16, fontWeight: '700' }}>
+                  {customer.credit_limit.toFixed(0)} ₪
+                </Text>
+              </View>
+            )}
+          </View>
 
-      <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: 100 }}>
-        <Card style={{ marginBottom: Spacing.lg }}>
-          <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.gray800, textAlign: 'right', flex: 1 }}>
-              {customer.name}
-            </Text>
-            <TouchableOpacity onPress={load} style={{ padding: 6 }}>
-              <Ionicons name="refresh-outline" size={20} color={Colors.primary} />
+          <View style={{ flexDirection: 'row-reverse', gap: 10, marginTop: Spacing.lg }}>
+            <TouchableOpacity onPress={() => setShowPay(true)} style={{ flex: 1, backgroundColor: Colors.white, borderRadius: Radius.md, paddingVertical: 12, alignItems: 'center' }}>
+              <Text style={{ color: Colors.success, fontWeight: '700' }}>استلام دفعة</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowDebt(true)} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: Radius.md, paddingVertical: 12, alignItems: 'center' }}>
+              <Text style={{ color: Colors.white, fontWeight: '700' }}>إضافة دين</Text>
             </TouchableOpacity>
           </View>
-          {!!customer.phone && (
-            <Text style={{ fontSize: 13, color: Colors.gray400, textAlign: 'right', marginTop: 2 }}>
-              {customer.phone}
-            </Text>
-          )}
+        </View>
 
-          {/* الدين الحقيقي المحسوب من الفواتير (يُقدَّم على الكاش المحلي) */}
-          {(() => {
-            const realDebt = statement?.current_debt ?? customer.current_debt;
-            return (
-              <View style={{ flexDirection: 'row-reverse', gap: 8, marginTop: Spacing.md, flexWrap: 'wrap' }}>
-                {realDebt > 0
-                  ? <Badge label={`دين حالي: ${Number(realDebt).toFixed(2)} ₪`} color="red" />
-                  : <Badge label="لا يوجد دين" color="green" />}
-                <Badge label={`حد الائتمان: ${customer.credit_limit.toFixed(0)} ₪`} color="gray" />
-              </View>
-            );
-          })()}
-        </Card>
+        {/* العمليات (أوفلاين) */}
+        <View style={{ padding: Spacing.lg }}>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: Colors.gray800, marginBottom: Spacing.md, textAlign: 'right' }}>
+            كشف الحساب والسجل (محلي)
+          </Text>
 
-        <View style={{ flexDirection: 'row-reverse', gap: Spacing.md, marginBottom: Spacing.lg }}>
-          <View style={{ flex: 1 }}>
-            <Button title="إضافة دين" variant="danger" fullWidth onPress={() => setShowDebt(true)} />
-          </View>
-          {customer.current_debt > 0 && (
-            <View style={{ flex: 1 }}>
-              <Button title="تسجيل دفعة" variant="success" fullWidth onPress={() => setShowPay(true)} />
+          {sortedInvoices.length === 0 ? (
+            <View style={{ backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.xl, alignItems: 'center', marginTop: Spacing.lg }}>
+              <Ionicons name="document-text-outline" size={48} color={Colors.gray300} />
+              <Text style={{ color: Colors.gray500, marginTop: 10, fontWeight: '600' }}>لا توجد فواتير أو ديون سابقة</Text>
+            </View>
+          ) : (
+            <View style={{ gap: Spacing.sm }}>
+              {sortedInvoices.map(inv => (
+                <TouchableOpacity
+                  key={inv.id}
+                  onPress={() => router.push({ pathname: '/invoices/[id]', params: { id: inv.id } })}
+                  style={{ backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.md, flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', ...Shadow.sm }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontWeight: '700', color: Colors.gray800, textAlign: 'right' }}>
+                      {inv.notes || (inv.payment_method === 'credit' ? 'بيع آجل' : 'فاتورة مبيعات')}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: Colors.gray500, textAlign: 'right', marginTop: 2 }}>
+                      {new Date(inv.created_at).toLocaleDateString('ar')} • {inv.invoice_number || 'معلّقة'}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-start' }}>
+                    <Text style={{ fontWeight: '800', fontSize: 16, color: inv.payment_method === 'credit' && inv.remaining_amount > 0 ? Colors.danger : Colors.gray800 }}>
+                      {inv.total.toFixed(2)} ₪
+                    </Text>
+                    {inv.sync_status !== 'synced' && (
+                      <Badge label="تنتظر المزامنة" color="blue" />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
             </View>
           )}
         </View>
-
-        <Text style={{ fontSize: Fonts.sizes.sm, fontWeight: '700', color: Colors.gray500,
-                       textAlign: 'right', marginBottom: Spacing.sm }}>
-          سجل الحركات
-        </Text>
-        {transactions.length === 0 ? (
-          <Card>
-            <Text style={{ textAlign: 'center', color: Colors.gray400, paddingVertical: Spacing.md }}>
-              لا توجد حركات مسجلة بعد
-            </Text>
-          </Card>
-        ) : (
-          <View style={{ gap: 8 }}>
-            {transactions.map((t, idx) => (
-              <Card key={t.id ?? idx} padding={Spacing.md}>
-                <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between' }}>
-                  <Text style={{ fontWeight: '700', color: Colors.gray700 }}>
-                    {t.type || t.invoice_number || t.description || 'حركة'}
-                    {t.pending ? ' ⏳' : ''}
-                  </Text>
-                  <Text style={{ fontWeight: '800',
-                                 color: (t.amount ?? 0) < 0 ? Colors.success : Colors.gray800 }}>
-                    {Number(t.amount ?? t.total ?? 0).toFixed(2)} ₪
-                  </Text>
-                </View>
-                {(t.date || t.created_at) && (
-                  <Text style={{ fontSize: 12, color: Colors.gray400, textAlign: 'right', marginTop: 4 }}>
-                    {t.date || t.created_at}
-                  </Text>
-                )}
-              </Card>
-            ))}
-          </View>
-        )}
       </ScrollView>
 
+      {/* مودال الدفعة */}
       {showPay && (
-        <View style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: Colors.white,
-          borderTopLeftRadius: Radius['2xl'], borderTopRightRadius: Radius['2xl'], padding: Spacing.lg,
-        }}>
-          <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center',
-                         marginBottom: Spacing.md }}>
-            <Text style={{ fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.gray800 }}>تسجيل دفعة</Text>
-            <TouchableOpacity onPress={() => setShowPay(false)}>
-              <Ionicons name="close" size={22} color={Colors.gray500} />
-            </TouchableOpacity>
+        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: Spacing.lg }}>
+          <View style={{ backgroundColor: Colors.white, borderRadius: Radius.xl, padding: Spacing.xl, ...Shadow.lg }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: Spacing.md }}>استلام دفعة من العميل</Text>
+            <Input label="المبلغ (₪)" value={payAmount} onChangeText={setPayAmount} keyboardType="decimal-pad" autoFocus />
+            <View style={{ flexDirection: 'row-reverse', gap: 10, marginTop: Spacing.lg }}>
+              <Button title="استلام وحفظ" onPress={submitPayment} loading={paying} style={{ flex: 1 }} />
+              <Button title="إلغاء" variant="secondary" onPress={() => setShowPay(false)} style={{ flex: 1 }} />
+            </View>
           </View>
-          <Input
-            label={`المبلغ (الدين الحالي: ${customer.current_debt.toFixed(2)} ₪)`}
-            value={payAmount}
-            onChangeText={setPayAmount}
-            keyboardType="decimal-pad"
-            placeholder="0.00"
-            autoFocus
-          />
-          <Button title="تأكيد الدفعة" onPress={submitPayment} loading={paying} fullWidth />
         </View>
       )}
 
+      {/* مودال الدين اليدوي */}
       {showDebt && (
-        <View style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: Colors.white,
-          borderTopLeftRadius: Radius['2xl'], borderTopRightRadius: Radius['2xl'], padding: Spacing.lg,
-        }}>
-          <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center',
-                         marginBottom: Spacing.md }}>
-            <Text style={{ fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.gray800 }}>إضافة دين</Text>
-            <TouchableOpacity onPress={() => setShowDebt(false)}>
-              <Ionicons name="close" size={22} color={Colors.gray500} />
-            </TouchableOpacity>
+        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: Spacing.lg }}>
+          <View style={{ backgroundColor: Colors.white, borderRadius: Radius.xl, padding: Spacing.xl, ...Shadow.lg }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: Spacing.md }}>تسجيل دين يدوي (آجل)</Text>
+            <Input label="المبلغ (₪)" value={debtAmount} onChangeText={setDebtAmount} keyboardType="decimal-pad" autoFocus />
+            <Input label="ملاحظات (اختياري)" value={debtNotes} onChangeText={setDebtNotes} />
+            <View style={{ flexDirection: 'row-reverse', gap: 10, marginTop: Spacing.lg }}>
+              <Button title="تسجيل الدين" onPress={submitDebt} loading={addingDebt} style={{ flex: 1 }} />
+              <Button title="إلغاء" variant="secondary" onPress={() => setShowDebt(false)} style={{ flex: 1 }} />
+            </View>
           </View>
-          <Input
-            label="مبلغ الدين ₪ *"
-            value={debtAmount}
-            onChangeText={setDebtAmount}
-            keyboardType="decimal-pad"
-            placeholder="مثال: 50"
-            autoFocus
-          />
-          <Input
-            label="البيان / التفاصيل"
-            value={debtNotes}
-            onChangeText={setDebtNotes}
-            placeholder="مثال: دين نقدي"
-          />
-          <Button title="تأكيد الدين" variant="danger" onPress={submitDebt} loading={addingDebt} fullWidth />
         </View>
       )}
-
+      
+      {/* مودال تعديل العميل */}
       {showEdit && (
-        <View style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: Colors.white,
-          borderTopLeftRadius: Radius['2xl'], borderTopRightRadius: Radius['2xl'], padding: Spacing.lg,
-          maxHeight: '85%',
-        }}>
-          <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center',
-                         marginBottom: Spacing.md }}>
-            <Text style={{ fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.gray800 }}>
-              تعديل بيانات العميل
-            </Text>
-            <TouchableOpacity onPress={() => setShowEdit(false)}>
-              <Ionicons name="close" size={22} color={Colors.gray500} />
-            </TouchableOpacity>
+        <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: Spacing.lg }}>
+          <View style={{ backgroundColor: Colors.white, borderRadius: Radius.xl, padding: Spacing.xl, ...Shadow.lg }}>
+            <Text style={{ fontSize: 18, fontWeight: '800', textAlign: 'center', marginBottom: Spacing.md }}>تعديل بيانات العميل</Text>
+            <Input label="الاسم" value={editName} onChangeText={setEditName} autoFocus />
+            <Input label="الهاتف" value={editPhone} onChangeText={setEditPhone} keyboardType="phone-pad" />
+            <Input label="العنوان" value={editAddress} onChangeText={setEditAddress} />
+            <View style={{ flexDirection: 'row-reverse', gap: 10, marginTop: Spacing.lg }}>
+              <Button title="حفظ التعديلات" onPress={submitEdit} style={{ flex: 1 }} />
+              <Button title="إلغاء" variant="secondary" onPress={() => setShowEdit(false)} style={{ flex: 1 }} />
+            </View>
           </View>
-
-          <ScrollView keyboardShouldPersistTaps="handled">
-            <Input label="الاسم" value={editName} onChangeText={setEditName}
-                   placeholder="اسم العميل" autoFocus />
-            <Input label="هاتف" value={editPhone} onChangeText={setEditPhone}
-                   placeholder="05xxxxxxxx" keyboardType="phone-pad" />
-            <Input label="هاتف إضافي (اختياري)" value={editPhone2} onChangeText={setEditPhone2}
-                   placeholder="05xxxxxxxx" keyboardType="phone-pad" />
-            <Input label="البريد الإلكتروني (اختياري)" value={editEmail} onChangeText={setEditEmail}
-                   placeholder="example@mail.com" keyboardType="email-address" />
-            <Input label="العنوان (اختياري)" value={editAddress} onChangeText={setEditAddress}
-                   placeholder="العنوان" />
-            <Input label="ملاحظات (اختياري)" value={editNotes} onChangeText={setEditNotes}
-                   placeholder="ملاحظات" />
-
-            <Button title="حفظ التعديل" onPress={submitEdit} loading={saving} fullWidth
-                    style={{ marginTop: Spacing.sm, marginBottom: Spacing.lg }} />
-          </ScrollView>
         </View>
       )}
     </SafeAreaView>

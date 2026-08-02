@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking, Keyboard,
+  View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,20 +8,16 @@ import { Ionicons } from '@expo/vector-icons';
 import { Input, Button, Badge } from '../../src/components/ui';
 import { CustomerPickerModal } from '../../src/components/CustomerPickerModal';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
-import { productsApi, invoicesApi } from '../../src/api';
 import { isBackendReachable } from '../../src/api/client';
-import { reportsApi } from '../../src/api/reports';
 import { useCartStore } from '../../src/store/cartStore';
 import type { Product, Customer, PaymentMethod } from '../../src/types';
-import { runProductSync } from '../../src/db/productsCache';
-import { runCategorySync } from '../../src/db/categorySync';
 import {
-  searchProductsCache, localProductToProduct, refreshProductsCache,
-} from '../../src/db/productsCache';
-import { recordOfflineSaleLocal, syncOfflineSales, getPendingOfflineSalesCount } from '../../src/db/offlineSales';
-import { syncOfflinePurchases } from '../../src/db/offlinePurchases';
-import { runCustomerSync } from '../../src/db/customerSync';
-import { runSupplierSync } from '../../src/db/supplierSync';
+  searchProducts, localProductToProduct, getAllProducts,
+  createLocalInvoice, updateCustomerDebt, updateProductStock,
+  LocalProduct, runInTransaction
+} from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
+import { reportsApi } from '../../src/api/reports';
 
 const PAYMENT_OPTIONS: { value: PaymentMethod; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { value: 'cash',     label: 'نقدي',   icon: 'cash-outline' },
@@ -29,6 +25,34 @@ const PAYMENT_OPTIONS: { value: PaymentMethod; label: string; icon: keyof typeof
   { value: 'transfer', label: 'تحويل',  icon: 'swap-horizontal-outline' },
   { value: 'credit',   label: 'آجل',    icon: 'time-outline' },
 ];
+
+// تحويل LocalProduct إلى Product للواجهة
+function localProductToUI(p: LocalProduct): Product {
+  return {
+    id: p.id,
+    name: p.name,
+    name_ar: p.name_ar || undefined,
+    barcode_piece: p.barcode_piece || undefined,
+    barcode_carton: p.barcode_carton || undefined,
+    base_unit: 'piece',
+    pieces_per_carton: p.pieces_per_carton,
+    cost_price: p.cost_price,
+    retail_price: p.retail_price,
+    wholesale_price: p.retail_price,
+    carton_price: p.carton_price,
+    piece_price_from_carton: p.pieces_per_carton > 0 ? p.carton_price / p.pieces_per_carton : 0,
+    stock_quantity: p.stock_quantity,
+    stock_in_cartons: p.pieces_per_carton > 0 ? p.stock_quantity / p.pieces_per_carton : 0,
+    min_stock_alert: 5,
+    is_low_stock: p.stock_quantity <= 5,
+    profit_margin: p.cost_price > 0 ? ((p.retail_price - p.cost_price) / p.cost_price) * 100 : 0,
+    has_expiry: false,
+    tax_rate: p.tax_rate,
+    is_active: p.is_active === 1,
+    is_featured: false,
+    created_at: p.created_at,
+  };
+}
 
 export default function POSScreen() {
   const router = useRouter();
@@ -48,71 +72,24 @@ export default function POSScreen() {
   const [taxPercentText, setTaxPercentText] = useState(String(taxPercent || ''));
   const [paidAmountText, setPaidAmountText] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [isOnline, setIsOnline] = useState(true);
-  const [pendingOfflineSales, setPendingOfflineSales] = useState(0);
 
-  // ── حالة الاتصال + مزامنة تلقائية عند فتح الشاشة ─────────
+  // مزامنة تلقائية في الخلفية عند فتح الشاشة
   useEffect(() => {
-    let mounted = true;
-
-    const refreshPendingCount = () => {
-      if (mounted) setPendingOfflineSales(getPendingOfflineSalesCount());
-    };
-
-    const checkAndSync = async () => {
-      const online = await isBackendReachable();
-      if (!mounted) return;
-      setIsOnline(online);
-      refreshPendingCount();
-
+    isBackendReachable().then(online => {
       if (online) {
-        runProductSync().catch(() => {});
-        runCategorySync().catch(() => {});
-        runCustomerSync().catch(() => {});
-        runSupplierSync().catch(() => {});
-
-        syncOfflineSales()
-          .then((result) => {
-            if (result.pushed > 0 && mounted) {
-              refreshPendingCount();
-              if (result.needsReview > 0) {
-                Alert.alert(
-                  'تنبيه مراجعة',
-                  `${result.needsReview} من عمليات البيع المُزامنة تحتاج مراجعة يدوية للمخزون.`
-                );
-              }
-            }
-          })
-          .catch(() => {});
-
-        syncOfflinePurchases()
-          .then((result) => {
-            if (result.pushed > 0 && mounted) {
-              if (result.needsReview > 0) {
-                Alert.alert(
-                  'تنبيه مراجعة المشتريات',
-                  `${result.needsReview} من فواتير الشراء الأوفلاين تحتاج مراجعة.`
-                );
-              }
-            }
-          })
-          .catch(() => {});
+        runFullSync().catch(err => console.log('[POS] Background sync error:', err));
       }
-    };
-
-    checkAndSync();
-    return () => { mounted = false; };
+    });
   }, []);
 
-  // ── Product search — كاش أولاً دائماً (فوري بدون إنترنت) ─
+  // ── بحث عن منتجات — من SQLite فقط (فوري، بدون إنترنت) ──────────
   useEffect(() => {
     if (!search.trim()) { setResults([]); return; }
     setSearching(true);
     const t = setTimeout(() => {
       try {
-        // دائماً من الكاش المحلي — فوري وبدون إنترنت
-        const cached = searchProductsCache(search.trim(), 10);
-        setResults(cached.map(localProductToProduct));
+        const found = searchProducts(search.trim(), 10);
+        setResults(found.map(localProductToUI));
       } catch {
         setResults([]);
       } finally {
@@ -156,6 +133,7 @@ export default function POSScreen() {
     setPaidAmountText('');
   };
 
+  // ── إتمام البيع — محلي دائماً أولاً ───────────────────────────
   const handleCheckout = async (asDraft: boolean) => {
     if (items.length === 0) {
       Alert.alert('السلة فارغة', 'أضف منتجاً واحداً على الأقل قبل إتمام البيع');
@@ -166,100 +144,78 @@ export default function POSScreen() {
       return;
     }
 
-    // ── مسار أوفلاين: بس بيع بالآجل كامل مدعوم (بدون مسودة، بدون خصم/ضريبة يدوية) ──
-    const online = await isBackendReachable();
-    setIsOnline(online);
-
-    if (!online) {
-      if (asDraft) {
-        Alert.alert('غير متاح أوفلاين', 'حفظ المسودة يحتاج اتصال بالإنترنت.');
-        return;
-      }
-      if (paymentMethod === 'credit' && !selectedCustomer) {
-        Alert.alert('اختر عميلاً', 'البيع الآجل أوفلاين يتطلب اختيار عميل من الكاش المحلي.');
-        return;
-      }
-
-      setSubmitting(true);
-      try {
-        recordOfflineSaleLocal(
-          selectedCustomer ? selectedCustomer.id : null,
-          selectedCustomer ? selectedCustomer.name : null,
-          items.map((i) => ({
-            product_id: i.product.id,
-            quantity: i.quantity,
-            unit_type: i.unit_type,
-            unit_price: i.unit_price,
-            pieces_per_carton: i.product.pieces_per_carton,
-          })),
-          total,
-          paymentMethod
-        );
-        setPendingOfflineSales(getPendingOfflineSalesCount());
-        resetForm();
-        Alert.alert(
-          'تم تسجيل البيع محلياً 💾',
-          'العملية محفوظة على الجهاز وبتتزامن تلقائياً أول ما يرجع الإنترنت.'
-        );
-      } catch (e: any) {
-        Alert.alert('خطأ في الحفظ المحلي', e?.message || 'تعذّر حفظ البيع على الجهاز');
-      } finally {
-        setSubmitting(false);
-      }
-      return;
-    }
-
-    // ── مسار أونلاين (الأصلي، بدون أي تعديل بالمنطق) ─────────
-    const paidAmount = paymentMethod === 'credit'
-      ? (Number(paidAmountText) || 0)
-      : total;
-
     setSubmitting(true);
+
     try {
-      const invoice: any = await invoicesApi.create({
-        invoice_type: 'sale',
-        customer_id: customerId ?? undefined,
-        payment_method: paymentMethod,
-        paid_amount: paidAmount,
-        discount_percent: discountPercent,
-        discount_amount: discountAmount,
-        tax_percent: taxPercent,
-        notes: notes || undefined,
-        as_draft: asDraft,
-        items: items.map(i => ({
+      const paidAmount = paymentMethod === 'credit'
+        ? (Number(paidAmountText) || 0)
+        : total;
+      const remainingAmount = Math.max(0, total - paidAmount);
+
+      // ✅ تغليف جميع العمليات الحساسة في Transaction (All-or-Nothing)
+      runInTransaction(() => {
+        // ── خطوة 1: احفظ الفاتورة محلياً في SQLite فوراً ────────────
+        const invoiceItems = items.map(i => ({
+          invoice_id: '', // سيُملأ داخل createLocalInvoice
           product_id: i.product.id,
+          product_name: i.product.name_ar || i.product.name,
           quantity: i.quantity,
           unit_type: i.unit_type,
           unit_price: i.unit_price,
-          discount_amount: i.discount_amount,
-        })),
+          cost_price: i.product.cost_price,
+          pieces_per_carton: i.product.pieces_per_carton,
+          total: i.unit_price * i.quantity - i.discount_amount,
+        }));
+
+        createLocalInvoice({
+          invoice_number: null, // سيُعطى من السيرفر عند المزامنة
+          invoice_type: 'sale',
+          status: asDraft ? 'draft' : 'completed',
+          payment_method: paymentMethod as any,
+          payment_status: remainingAmount <= 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid',
+          customer_id: customerId || null,
+          customer_name: selectedCustomer?.name || null,
+          supplier_id: null,
+          subtotal,
+          discount_amount: discountAmount,
+          tax_amount: taxAmount,
+          total,
+          paid_amount: paidAmount,
+          remaining_amount: remainingAmount,
+          notes: notes || null,
+          sync_status: 'pending_create',
+        }, invoiceItems);
+
+        // ── خطوة 2: تحديث مخزون المنتجات محلياً ──────────────────────
+        for (const item of items) {
+          const qtyInPieces = item.unit_type === 'carton'
+            ? item.quantity * item.product.pieces_per_carton
+            : item.quantity;
+          updateProductStock(item.product.id, -qtyInPieces);
+        }
+
+        // ── خطوة 3: تحديث دين العميل محلياً (إذا كان آجل) ────────────
+        if (paymentMethod === 'credit' && customerId && remainingAmount > 0) {
+          updateCustomerDebt(customerId, remainingAmount);
+        }
       });
 
       resetForm();
 
-      const invoiceLabel = invoice?.invoice_number ? `رقم الفاتورة: ${invoice.invoice_number}` : '';
-      const shareButtons: any[] = [{ text: 'إغلاق', style: 'cancel' }];
-      if (invoice?.whatsapp_url) {
-        shareButtons.push({ text: 'مشاركة عبر واتساب', onPress: () => Linking.openURL(invoice.whatsapp_url) });
-      }
-      if (invoice?.id) {
-        shareButtons.push({
-          text: 'مشاركة PDF',
-          onPress: () => reportsApi.exportInvoicePdf(invoice.id).catch(() =>
-            Alert.alert('خطأ', 'تعذّر إنشاء ملف PDF للفاتورة')),
-        });
-      }
-      Alert.alert(asDraft ? 'تم حفظ المسودة' : 'تمت عملية البيع ✅', invoiceLabel, shareButtons);
-      
-      // Update customer local cache in the background to reflect new debt immediately
-      if (paymentMethod === 'credit' && customerId) {
-        runCustomerSync().catch(() => {});
-      }
+      // ── خطوة 4: مزامنة بالخلفية (بدون انتظار) ───────────────────
+      isBackendReachable().then(online => {
+        if (online) {
+          runFullSync().catch(err => console.log('[POS] Post-sale sync error:', err));
+        }
+      });
+
+      Alert.alert(
+        asDraft ? '📝 تم حفظ المسودة' : '✅ تمت عملية البيع',
+        `الإجمالي: ${total.toFixed(2)} ₪\nتم الحفظ محلياً وسيتزامن تلقائياً مع السيرفر.`,
+      );
+
     } catch (e: any) {
-      // ⚠️ client.ts يحوّل كل أخطاء Axios لـ new Error(message) عربي —
-      // لذلك الرسالة موجودة دائماً في e.message مباشرة.
-      // رسالة خاصة لـ Render Cold Start (⏳ ...) موجودة في client.ts.
-      Alert.alert('تعذّر إتمام البيع', e?.message || 'خطأ غير متوقع');
+      Alert.alert('خطأ', e?.message || 'تعذّر إتمام البيع');
     } finally {
       setSubmitting(false);
     }
@@ -285,28 +241,8 @@ export default function POSScreen() {
         )}
       </View>
 
-      {/* شريط حالة الاتصال / مبيعات أوفلاين معلّقة */}
-      {(!isOnline || pendingOfflineSales > 0) && (
-        <View style={{
-          flexDirection: 'row-reverse', alignItems: 'center', gap: 6,
-          backgroundColor: !isOnline ? '#FFF3CD' : '#E3F2FD',
-          paddingVertical: 8, paddingHorizontal: Spacing.lg,
-        }}>
-          <Ionicons
-            name={!isOnline ? 'cloud-offline-outline' : 'sync-outline'}
-            size={16}
-            color={!isOnline ? '#8A6D00' : '#1565C0'}
-          />
-          <Text style={{ fontSize: 12, fontWeight: '600', color: !isOnline ? '#8A6D00' : '#1565C0' }}>
-            {!isOnline
-              ? 'وضع أوفلاين — المبيعات ستتزامن لاحقاً'
-              : `يتم مزامنة ${pendingOfflineSales} عملية بيع أوفلاين معلّقة...`}
-          </Text>
-        </View>
-      )}
-
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 260 }}>
-        {/* Search / quick add */}
+        {/* Search */}
         <View style={{ padding: Spacing.lg, paddingBottom: 0 }}>
           <Input
             placeholder="ابحث عن منتج بالاسم أو الباركود..."
@@ -314,9 +250,7 @@ export default function POSScreen() {
             onChangeText={setSearch}
             leftIcon={<Ionicons name="search" size={18} color={Colors.gray400} />}
             rightIcon={
-              <TouchableOpacity
-                onPress={() => router.push({ pathname: '/scan', params: { source: 'pos' } })}
-              >
+              <TouchableOpacity onPress={() => router.push({ pathname: '/scan', params: { source: 'pos' } })}>
                 <Ionicons name="barcode-outline" size={22} color={Colors.primary} />
               </TouchableOpacity>
             }
@@ -429,18 +363,15 @@ export default function POSScreen() {
             <View style={{ flexDirection: 'row-reverse', gap: 8, marginBottom: Spacing.md }}>
               {PAYMENT_OPTIONS.map(opt => {
                 const active = paymentMethod === opt.value;
-                const disabled = false; // Allow all payment methods offline
                 return (
                   <TouchableOpacity
                     key={opt.value}
-                    onPress={() => !disabled && setPaymentMethod(opt.value)}
-                    disabled={disabled}
+                    onPress={() => setPaymentMethod(opt.value)}
                     style={{
                       flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10,
                       borderRadius: Radius.lg,
                       backgroundColor: active ? Colors.primary : Colors.white,
                       borderWidth: active ? 0 : 1, borderColor: Colors.gray200,
-                      opacity: disabled ? 0.4 : 1,
                     }}
                   >
                     <Ionicons name={opt.icon} size={18} color={active ? Colors.white : Colors.gray500} />
@@ -453,7 +384,7 @@ export default function POSScreen() {
               })}
             </View>
 
-            {paymentMethod === 'credit' && isOnline && (
+            {paymentMethod === 'credit' && (
               <Input
                 label="المبلغ المدفوع الآن (اتركه فارغاً إذا آجل بالكامل)"
                 value={paidAmountText}
@@ -493,7 +424,7 @@ export default function POSScreen() {
               style={{ flex: 1 }}
             />
             <Button
-              title={isOnline ? 'إتمام البيع' : 'حفظ البيع (أوفلاين)'}
+              title="إتمام البيع"
               variant="success"
               onPress={() => handleCheckout(false)}
               loading={submitting}
@@ -513,7 +444,6 @@ export default function POSScreen() {
 }
 
 // ── Cart row ─────────────────────────────────────────────
-
 function CartRow({ item, onIncrement, onDecrement, onRemove }: {
   item: { product: Product; quantity: number; unit_type: string; unit_price: number };
   onIncrement: () => void;

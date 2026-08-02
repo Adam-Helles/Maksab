@@ -5,10 +5,9 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Input, Button } from '../../src/components/ui';
 import { Colors, Fonts, Spacing } from '../../src/types/theme';
-import { customersApi } from '../../src/api';
-import type { Customer } from '../../src/types';
 import { isBackendReachable } from '../../src/api/client';
-import { recordNewCustomerLocal, upsertCustomerCache } from '../../src/db/customerSync';
+import { createLocalCustomer } from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
 
 export default function NewCustomerScreen() {
   const router = useRouter();
@@ -28,47 +27,29 @@ export default function NewCustomerScreen() {
     }
     setNameError('');
 
-    const payload: any = {
-      name: name.trim(),
-      phone: phone.trim() ? phone.trim() : null,
-      email: email.trim() ? email.trim() : null,
-      address: address.trim() ? address.trim() : null,
-      credit_limit: creditLimit.trim() ? Number(creditLimit) : 0,
-    };
-
     setSaving(true);
     try {
-      const isOnline = await isBackendReachable();
-      
-      if (isOnline) {
-        const created = await customersApi.create(payload);
-        upsertCustomerCache(created);
-        router.back();
-      } else {
-        const localId = recordNewCustomerLocal({
-          name: payload.name || '',
-          phone: payload.phone || null,
-          phone2: null,
-          email: payload.email || null,
-          address: payload.address || null,
-          notes: null,
-          credit_limit: payload.credit_limit || 0,
-        });
-        Alert.alert('تم الحفظ محلياً 💾', 'لا يوجد اتصال. سيتم مزامنة العميل لاحقاً.');
-        router.back();
-      }
+      // ✅ احفظ دائماً محلياً أولاً (Offline-First)
+      createLocalCustomer({
+        name: name.trim(),
+        phone: phone.trim() || null,
+        phone2: null,
+        email: email.trim() || null,
+        address: address.trim() || null,
+        notes: null,
+        credit_limit: Number(creditLimit) || 0,
+        current_debt: 0,
+        is_active: 1,
+      });
+
+      // مزامنة في الخلفية إذا كان متصلاً
+      isBackendReachable().then(online => {
+        if (online) runFullSync().catch(() => {});
+      });
+
+      router.back();
     } catch (err: any) {
-      // FastAPI بيرجع detail كـ Array عند خطأ 422 — نحوله لنص مفهوم
-      const rawDetail = err?.response?.data?.detail;
-      let detail: string;
-      if (Array.isArray(rawDetail)) {
-        detail = rawDetail.map((e: any) => e?.msg || JSON.stringify(e)).join(' | ');
-      } else if (typeof rawDetail === 'string') {
-        detail = rawDetail;
-      } else {
-        detail = err?.message || 'حدث خطأ أثناء حفظ العميل';
-      }
-      Alert.alert('تعذر الحفظ', detail);
+      Alert.alert('تعذر الحفظ', err?.message || 'حدث خطأ أثناء حفظ العميل');
     } finally {
       setSaving(false);
     }

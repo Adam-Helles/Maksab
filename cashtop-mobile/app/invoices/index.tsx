@@ -1,50 +1,58 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, Alert, Linking, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { invoicesApi, reportsApi } from '../../src/api';
+import { reportsApi } from '../../src/api';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { isBackendReachable } from '../../src/api/client';
-
-const INVOICES_CACHE_KEY = 'invoices_list_cache';
+import { getAllInvoices, LocalInvoice } from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
+import { Badge } from '../../src/components/ui';
 
 export default function InvoicesScreen() {
   const router = useRouter();
-  const [invoices, setInvoices] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<LocalInvoice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isFromCache, setIsFromCache] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadInvoices();
+  const loadFromLocal = useCallback(() => {
+    const localInvoices = getAllInvoices();
+    // ترتيب تنازلي (الأحدث أولاً)
+    localInvoices.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    setInvoices(localInvoices);
+    setLoading(false);
+    setRefreshing(false);
   }, []);
 
-  const loadInvoices = async () => {
-    try {
-      const online = await isBackendReachable();
+  useFocusEffect(useCallback(() => {
+    loadFromLocal();
+    
+    // محاولة المزامنة
+    isBackendReachable().then(online => {
       if (online) {
-        const data = await invoicesApi.list();
-        setInvoices(data);
-        setIsFromCache(false);
-        await AsyncStorage.setItem(INVOICES_CACHE_KEY, JSON.stringify(data));
-      } else {
-        const cached = await AsyncStorage.getItem(INVOICES_CACHE_KEY);
-        if (cached) {
-          setInvoices(JSON.parse(cached));
-          setIsFromCache(true);
-        }
+        runFullSync().then(() => loadFromLocal()).catch(() => {});
       }
-    } catch (e) {
-      console.log(e);
-    } finally {
-      setLoading(false);
+    });
+  }, [loadFromLocal]));
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    const online = await isBackendReachable();
+    if (online) {
+      await runFullSync().catch(() => {});
     }
+    loadFromLocal();
   };
 
-  const exportPdf = async (inv: any) => {
+  const exportPdf = async (invId: string) => {
+    const online = await isBackendReachable();
+    if (!online) {
+      Alert.alert('غير متصل', 'تصدير PDF يحتاج إلى اتصال بالإنترنت.');
+      return;
+    }
     try {
-      await reportsApi.exportInvoicePdf(inv.id);
+      await reportsApi.exportInvoicePdf(invId);
     } catch (e: any) {
       Alert.alert('خطأ', e.message || 'فشل التصدير');
     }
@@ -66,57 +74,49 @@ export default function InvoicesScreen() {
 
       {loading ? (
         <ActivityIndicator size="large" color={Colors.primary} style={{ marginTop: 50 }} />
+      ) : invoices.length === 0 ? (
+        <View style={{ alignItems: 'center', marginTop: 40 }}>
+          <Text style={{ textAlign: 'center', color: Colors.gray400 }}>لا توجد فواتير سابقة</Text>
+        </View>
       ) : (
-        <ScrollView contentContainerStyle={{ padding: Spacing.lg }}>
-          {isFromCache && (
-            <View style={{ backgroundColor: '#F59E0B', padding: 8, marginBottom: Spacing.md,
-                           borderRadius: 8, flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
-              <Ionicons name="cloud-offline-outline" size={15} color="white" />
-              <Text style={{ color: 'white', fontSize: 12, fontWeight: '700' }}>
-                تعذّر الاتصال — يعرض آخر فواتير محفوظة.
-              </Text>
-            </View>
-          )}
-
-          {invoices.length === 0 ? (
-            <Text style={{ textAlign: 'center', color: Colors.gray400, marginTop: 40 }}>لا توجد فواتير سابقة</Text>
-          ) : (
-            invoices.map(inv => (
-              <TouchableOpacity key={inv.id} onPress={() => router.push(`/invoices/${inv.id}`)} style={{
-                backgroundColor: Colors.white, borderRadius: Radius.lg, ...Shadow.sm,
-                padding: Spacing.md, marginBottom: Spacing.md,
-                flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center'
-              }}>
-                <View>
+        <FlatList
+          data={invoices}
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ padding: Spacing.lg, paddingBottom: 100 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[Colors.primary]} />}
+          renderItem={({ item: inv }) => (
+            <TouchableOpacity onPress={() => router.push(`/invoices/${inv.id}`)} style={{
+              backgroundColor: Colors.white, borderRadius: Radius.lg, ...Shadow.sm,
+              padding: Spacing.md, marginBottom: Spacing.md,
+              flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
                   <Text style={{ fontSize: Fonts.sizes.md, fontWeight: 'bold', color: Colors.gray800, textAlign: 'right' }}>
-                    {inv.invoice_number}
+                    {inv.invoice_number || 'معلّقة'}
                   </Text>
-                  <Text style={{ fontSize: 13, color: Colors.gray500, textAlign: 'right', marginTop: 4 }}>
-                    {inv.customer?.name || 'مبيعات نقدية'} • {inv.total} ₪
-                  </Text>
-                  <Text style={{ fontSize: 11, color: Colors.gray400, textAlign: 'right', marginTop: 2 }}>
-                    {new Date(inv.created_at).toLocaleDateString()}
-                  </Text>
-                </View>
-
-                <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
-                  <TouchableOpacity onPress={() => exportPdf(inv)} style={{
-                    backgroundColor: Colors.primaryLight || '#EEF2FF', padding: 8, borderRadius: Radius.md,
-                  }}>
-                    <Ionicons name="document-text-outline" size={20} color={Colors.primary} />
-                  </TouchableOpacity>
-                  {inv.whatsapp_url && (
-                    <TouchableOpacity onPress={() => Linking.openURL(inv.whatsapp_url)} style={{
-                      backgroundColor: '#E8F5E9', padding: 8, borderRadius: Radius.md,
-                    }}>
-                      <Ionicons name="logo-whatsapp" size={20} color={Colors.success} />
-                    </TouchableOpacity>
+                  {inv.sync_status !== 'synced' && (
+                    <Badge label="أوفلاين" color="blue" />
                   )}
                 </View>
-              </TouchableOpacity>
-            ))
+                <Text style={{ fontSize: 13, color: Colors.gray500, textAlign: 'right', marginTop: 4 }}>
+                  {inv.customer_name || 'مبيعات نقدية'} • {inv.total.toFixed(2)} ₪
+                </Text>
+                <Text style={{ fontSize: 11, color: Colors.gray400, textAlign: 'right', marginTop: 2 }}>
+                  {new Date(inv.created_at).toLocaleString('ar')}
+                </Text>
+              </View>
+
+              <View style={{ flexDirection: 'row-reverse', gap: 10 }}>
+                <TouchableOpacity onPress={() => exportPdf(inv.id)} style={{
+                  backgroundColor: Colors.primaryLight || '#EEF2FF', padding: 8, borderRadius: Radius.md,
+                }}>
+                  <Ionicons name="document-text-outline" size={20} color={Colors.primary} />
+                </TouchableOpacity>
+              </View>
+            </TouchableOpacity>
           )}
-        </ScrollView>
+        />
       )}
     </SafeAreaView>
   );
