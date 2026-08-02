@@ -7,7 +7,7 @@ from pydantic import BaseModel, field_validator
 
 
 class OfflineSaleItemIn(BaseModel):
-    product_id: int
+    product_id: str
     quantity: float
     unit_type: str = "piece"
     unit_price: float  # يجي من الجهاز مباشرة (نفس ثقة override بالفاتورة الأونلاين)
@@ -29,7 +29,7 @@ class OfflineSaleItemIn(BaseModel):
 
 class OfflineSaleIn(BaseModel):
     id: str  # UUID يتولّد بالجهاز — بيصير Invoice.client_uuid
-    customer_id: Optional[int] = None
+    customer_id: Optional[str] = None
     payment_method: str = "credit"
     items: List[OfflineSaleItemIn]
     client_created_at: datetime
@@ -59,9 +59,9 @@ class OfflineSalePushResponse(BaseModel):
 
 
 class NeedsReviewInvoiceOut(BaseModel):
-    id: int
+    id: str
     invoice_number: str
-    customer_id: Optional[int]
+    customer_id: Optional[str]
     total: float
     review_notes: Optional[str]
     created_at: datetime

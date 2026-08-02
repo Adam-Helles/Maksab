@@ -1,3 +1,4 @@
+import uuid
 # app/models/store.py
 #
 # جدول المحلات (Tenants). كل محل = صف واحد هون.
@@ -11,7 +12,7 @@ from app.models.base import TimestampMixin
 class Store(Base, TimestampMixin):
     __tablename__ = "stores"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     name = Column(String(200), nullable=False)
     owner_name = Column(String(200), nullable=True)
     phone = Column(String(20), nullable=True)

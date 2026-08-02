@@ -10,7 +10,7 @@ from app.core.auth import get_current_user, require_manager_or_above, get_curren
 router = APIRouter(prefix="/settings", tags=["⚙️ إعدادات النظام"])
 
 
-def _get_or_create(db: Session, store_id: int) -> StoreSettings:
+def _get_or_create(db: Session, store_id: str) -> StoreSettings:
     """
     ⚠️ إصلاح جوهري: كانت الإعدادات صف واحد ثابت (id=1) يتشاركه كل
     التجار على النظام — يعني أي تاجر يعدّل اسم المحل أو العملة كان
@@ -35,7 +35,7 @@ def _get_or_create(db: Session, store_id: int) -> StoreSettings:
 def get_settings(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     return _get_or_create(db, store_id)
 
@@ -45,7 +45,7 @@ def update_settings(
     payload: StoreSettingsUpdate,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     settings = _get_or_create(db, store_id)
     update_data = payload.dict(exclude_unset=True)

@@ -24,7 +24,7 @@ router = APIRouter(prefix="/dashboard", tags=["📊 لوحة الإحصائيا�
 def dashboard_summary(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     today      = date.today()
     yesterday  = today - timedelta(days=1)
@@ -139,7 +139,7 @@ def chart_sales_daily(
     days: int = Query(30, ge=7, le=365, description="عدد الأيام"),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """بيانات مبيعات وأرباح يومية لرسم Line/Bar Chart"""
     start = date.today() - timedelta(days=days - 1)
@@ -199,7 +199,7 @@ def chart_sales_monthly(
     months: int = Query(12, ge=3, le=24),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     today = date.today()
     start = (today.replace(day=1) - timedelta(days=months * 30)).replace(day=1)
@@ -236,7 +236,7 @@ def chart_top_products(
     days:  int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     start = date.today() - timedelta(days=days)
 
@@ -271,7 +271,7 @@ def chart_sales_by_category(
     days: int = Query(30, ge=1, le=365),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     from app.models.category import Category
 
@@ -320,7 +320,7 @@ def chart_peak_hours(
     days: int = Query(30, ge=7, le=90),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     start = date.today() - timedelta(days=days)
 
@@ -353,7 +353,7 @@ def chart_top_customers(
     days:  int = Query(90, ge=1, le=365),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     start = date.today() - timedelta(days=days)
 
@@ -386,7 +386,7 @@ def chart_top_customers(
 def dashboard_all(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     يجمع كل بيانات الـ Dashboard في طلب واحد لتقليل عدد الـ API calls.

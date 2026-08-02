@@ -9,7 +9,7 @@ from app.models.invoice import InvoiceType, InvoiceStatus, PaymentStatus, Paymen
 # ══════════════════════════════════════════════════════════
 
 class InvoiceItemCreate(BaseModel):
-    product_id: int
+    product_id: str
     quantity: float
     unit_type: str = "piece"          # piece | carton
     unit_price: Optional[float] = None  # إذا فارغ → يأخذ السعر من المنتج
@@ -31,8 +31,8 @@ class InvoiceItemCreate(BaseModel):
 
 
 class InvoiceItemResponse(BaseModel):
-    id: int
-    product_id: int
+    id: str
+    product_id: str
     product_name: Optional[str] = None   # مُعبَّأ من الـ service
     quantity: float
     unit_type: str
@@ -51,8 +51,8 @@ class InvoiceItemResponse(BaseModel):
 
 class InvoiceCreate(BaseModel):
     invoice_type: InvoiceType = InvoiceType.SALE
-    customer_id: Optional[int] = None
-    supplier_id: Optional[int] = None
+    customer_id: Optional[str] = None
+    supplier_id: Optional[str] = None
 
     items: List[InvoiceItemCreate]
 
@@ -86,7 +86,7 @@ class InvoiceCreate(BaseModel):
 
 class InvoiceAddItem(BaseModel):
     """إضافة صنف لفاتورة draft موجودة"""
-    product_id: int
+    product_id: str
     quantity: float
     unit_type: str = "piece"
     unit_price: Optional[float] = None
@@ -117,8 +117,8 @@ class PaymentAdd(BaseModel):
 # ══════════════════════════════════════════════════════════
 
 class PaymentResponse(BaseModel):
-    id: int
-    invoice_id: int
+    id: str
+    invoice_id: str
     amount: float
     method: PaymentMethod
     notes: Optional[str]
@@ -128,7 +128,7 @@ class PaymentResponse(BaseModel):
 
 
 class InvoiceResponse(BaseModel):
-    id: int
+    id: str
     invoice_number: str
     unique_token: str
     invoice_type: InvoiceType
@@ -136,8 +136,8 @@ class InvoiceResponse(BaseModel):
     payment_status: PaymentStatus
     payment_method: PaymentMethod
 
-    customer_id: Optional[int]
-    supplier_id: Optional[int]
+    customer_id: Optional[str]
+    supplier_id: Optional[str]
     created_by: int
 
     subtotal: float
@@ -165,12 +165,12 @@ class InvoiceResponse(BaseModel):
 
 class InvoiceListResponse(BaseModel):
     """نسخة مختصرة لقوائم الفواتير"""
-    id: int
+    id: str
     invoice_number: str
     invoice_type: InvoiceType
     status: InvoiceStatus
     payment_status: PaymentStatus
-    customer_id: Optional[int]
+    customer_id: Optional[str]
     total: float
     paid_amount: float
     remaining_amount: float

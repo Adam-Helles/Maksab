@@ -22,7 +22,7 @@ def list_products(
     is_active: Optional[bool] = True,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     q = db.query(Product).filter(Product.store_id == store_id, Product.is_deleted == False)
 
@@ -52,7 +52,7 @@ def get_by_barcode(
     barcode: str,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """يبحث في باركود القطعة وباركود الكرتونة معاً — ضمن محل المستخدم فقط"""
     product = db.query(Product).filter(
@@ -69,7 +69,7 @@ def get_by_barcode(
 def get_low_stock(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     return db.query(Product).filter(
         Product.store_id == store_id,
@@ -81,10 +81,10 @@ def get_low_stock(
 
 @router.get("/{product_id}", response_model=ProductResponse, summary="تفاصيل منتج")
 def get_product(
-    product_id: int,
+    product_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     # ⚠️ الفلترة بـ store_id هون هي يلي بتمنع IDOR: بدونها أي مستخدم
     # بأي محل يقدر يجرب أرقام id متسلسلة (1، 2، 3...) ويشوف منتجات
@@ -104,7 +104,7 @@ def create_product(
     data: ProductCreate,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     # تحقق من الباركود ضمن نفس المحل فقط (تاجر تاني ممكن يستخدم نفس الباركود)
     if data.barcode_piece:
@@ -134,11 +134,11 @@ def create_product(
 
 @router.patch("/{product_id}", response_model=ProductResponse, summary="تعديل منتج")
 def update_product(
-    product_id: int,
+    product_id: str,
     data: ProductUpdate,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     product = db.query(Product).filter(
         Product.id == product_id,
@@ -159,11 +159,11 @@ def update_product(
 
 @router.post("/{product_id}/adjust-stock", summary="تعديل المخزون يدوياً")
 def adjust_stock(
-    product_id: int,
+    product_id: str,
     data: ProductStockAdjust,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     product = db.query(Product).filter(
         Product.id == product_id,
@@ -197,10 +197,10 @@ def adjust_stock(
 
 @router.delete("/{product_id}", summary="حذف منتج")
 def delete_product(
-    product_id: int,
+    product_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     product = db.query(Product).filter(
         Product.id == product_id,

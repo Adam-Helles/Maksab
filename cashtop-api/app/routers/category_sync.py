@@ -21,7 +21,7 @@ def push_category_profiles(
     payload: CategoryProfilePushRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     accepted = []
     overwritten_by_server = []
@@ -61,7 +61,7 @@ def pull_categories(
     since: Optional[datetime] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     query = db.query(Category).filter(
         Category.store_id == store_id,

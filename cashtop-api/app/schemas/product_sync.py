@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class ProductSyncOut(BaseModel):
-    id: int
+    id: str
     name: str
     name_ar: Optional[str] = None
     barcode_piece: Optional[str] = None
@@ -16,8 +16,8 @@ class ProductSyncOut(BaseModel):
     tax_rate: float
     pieces_per_carton: int
     stock_quantity: float
-    category_id: Optional[int] = None
-    supplier_id: Optional[int] = None
+    category_id: Optional[str] = None
+    supplier_id: Optional[str] = None
     is_active: bool
     updated_at: datetime
 
@@ -31,7 +31,7 @@ class ProductPullResponse(BaseModel):
 
 
 class ProductProfileUpdateIn(BaseModel):
-    id: int
+    id: str
     name: Optional[str] = None
     name_ar: Optional[str] = None
     barcode_piece: Optional[str] = None

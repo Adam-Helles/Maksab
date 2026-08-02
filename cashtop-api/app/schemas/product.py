@@ -25,8 +25,8 @@ class ProductCreate(BaseModel):
     has_expiry: bool = False
     expiry_date: Optional[date] = None
 
-    category_id: Optional[int] = None
-    supplier_id: Optional[int] = None
+    category_id: Optional[str] = None
+    supplier_id: Optional[str] = None
     tax_rate: float = 0.0
     is_featured: bool = False
 
@@ -55,15 +55,15 @@ class ProductUpdate(BaseModel):
     min_stock_alert: Optional[float] = None
     has_expiry: Optional[bool] = None
     expiry_date: Optional[date] = None
-    category_id: Optional[int] = None
-    supplier_id: Optional[int] = None
+    category_id: Optional[str] = None
+    supplier_id: Optional[str] = None
     tax_rate: Optional[float] = None
     is_active: Optional[bool] = None
     is_featured: Optional[bool] = None
 
 
 class ProductResponse(BaseModel):
-    id: int
+    id: str
     name: str
     name_ar: Optional[str]
     description: Optional[str]
@@ -83,8 +83,8 @@ class ProductResponse(BaseModel):
     profit_margin: float               # محسوبة
     has_expiry: bool
     expiry_date: Optional[date]
-    category_id: Optional[int]
-    supplier_id: Optional[int]
+    category_id: Optional[str]
+    supplier_id: Optional[str]
     tax_rate: float
     is_active: bool
     is_featured: bool

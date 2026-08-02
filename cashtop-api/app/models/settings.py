@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy import Column, Integer, String, ForeignKey
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -17,7 +18,7 @@ class StoreSettings(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
 
     # ─── عزل التاجر ────────────────────────────────────────
-    store_id = Column(Integer, ForeignKey("stores.id"), unique=True, nullable=False, index=True)
+    store_id = Column(String(36), ForeignKey("stores.id"), unique=True, nullable=False, index=True)
     store_name = Column(String(200), default="محلي")
     logo_url = Column(String(500), nullable=True)
     currency = Column(String(10), default="₪")

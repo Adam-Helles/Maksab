@@ -7,7 +7,7 @@ from pydantic import BaseModel, field_validator
 
 
 class OfflinePurchaseItemIn(BaseModel):
-    product_id: int
+    product_id: str
     quantity: float
     unit_type: str = "piece"
     unit_price: float
@@ -29,7 +29,7 @@ class OfflinePurchaseItemIn(BaseModel):
 
 class OfflinePurchaseIn(BaseModel):
     id: str  # UUID يتولّد بالجهاز — بيصير Invoice.client_uuid
-    supplier_id: Optional[int] = None
+    supplier_id: Optional[str] = None
     payment_method: str = "cash"
     items: List[OfflinePurchaseItemIn]
     client_created_at: datetime

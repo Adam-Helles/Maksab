@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 class SupplierPaymentEventIn(BaseModel):
     id: str  # UUID من الموبايل
-    supplier_id: int
+    supplier_id: str
     amount: float
     method: str = "cash"
     client_created_at: datetime
@@ -20,7 +20,7 @@ class SupplierPaymentPushRequest(BaseModel):
 
 class SupplierDebtEventIn(BaseModel):
     id: str  # UUID من الموبايل
-    supplier_id: int
+    supplier_id: str
     amount: float
     notes: Optional[str] = None
     client_created_at: datetime
@@ -31,7 +31,7 @@ class SupplierDebtPushRequest(BaseModel):
 
 
 class SupplierProfileUpdateIn(BaseModel):
-    id: int
+    id: str
     name: Optional[str] = None
     company: Optional[str] = None
     phone: Optional[str] = None
@@ -44,7 +44,7 @@ class SupplierProfilePushRequest(BaseModel):
 
 
 class SupplierSyncOut(BaseModel):
-    id: int
+    id: str
     name: str
     company: Optional[str]
     phone: Optional[str]

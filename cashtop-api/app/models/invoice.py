@@ -38,16 +38,16 @@ class PaymentMethod(str, enum.Enum):
 class InvoiceItem(Base, TimestampMixin):
     __tablename__ = "invoice_items"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # ─── عزل التاجر (دفاع بالعمق) ──────────────────────────
     # مو ضروري نظرياً لأنه محكوم عبر invoice_id → invoice.store_id،
     # لكن وجوده مباشرة هون بيمنع أي query ناقصة join تكشف بيانات
     # بالغلط، وبيسهّل تقارير/فلاتر مباشرة على بنود الفواتير.
-    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    store_id = Column(String(36), ForeignKey("stores.id"), nullable=False, index=True)
 
-    invoice_id = Column(Integer, ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False)
-    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    invoice_id = Column(String(36), ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False)
+    product_id = Column(String(36), ForeignKey("products.id"), nullable=False)
 
     quantity = Column(Float, nullable=False)
     unit_type = Column(String(20), default="piece", nullable=False)
@@ -81,11 +81,11 @@ class Invoice(Base, TimestampMixin):
         UniqueConstraint("store_id", "invoice_number", name="uq_store_invoice_number"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # ─── عزل التاجر ────────────────────────────────────────
     # أهم عمود بكل الموديلات — هاد أخطر جدول (بيانات مالية).
-    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    store_id = Column(String(36), ForeignKey("stores.id"), nullable=False, index=True)
 
     # ─── معرف الفاتورة ─────────────────────────────────────
     invoice_number = Column(String(30), nullable=False, index=True)  # شلنا unique المفردة
@@ -98,9 +98,9 @@ class Invoice(Base, TimestampMixin):
     payment_method = Column(SAEnum(PaymentMethod), default=PaymentMethod.CASH, nullable=False)
 
     # ─── الأطراف ───────────────────────────────────────────
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
-    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    customer_id = Column(String(36), ForeignKey("customers.id"), nullable=True)
+    supplier_id = Column(String(36), ForeignKey("suppliers.id"), nullable=True)
+    created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
 
     # ─── الأرقام المالية ───────────────────────────────────
     subtotal = Column(Float, default=0.0, nullable=False)
@@ -140,15 +140,15 @@ class Payment(Base, TimestampMixin):
     """سجل كل دفعة على الفاتورة"""
     __tablename__ = "payments"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # ─── عزل التاجر (دفاع بالعمق) ──────────────────────────
-    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    store_id = Column(String(36), ForeignKey("stores.id"), nullable=False, index=True)
 
-    invoice_id = Column(Integer, ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False)
+    invoice_id = Column(String(36), ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False)
     amount = Column(Float, nullable=False)
     method = Column(SAEnum(PaymentMethod), default=PaymentMethod.CASH, nullable=False)
     notes = Column(String(200), nullable=True)
-    received_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    received_by = Column(String(36), ForeignKey("users.id"), nullable=True)
 
     invoice = relationship("Invoice", back_populates="payments")

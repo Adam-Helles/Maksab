@@ -27,7 +27,7 @@ class FinancialSummary(BaseModel):
 
 
 class CustomerDebtEntry(BaseModel):
-    customer_id: int
+    customer_id: str
     customer_name: str
     phone: Optional[str]
     current_debt: float
@@ -40,7 +40,7 @@ class CustomerDebtEntry(BaseModel):
 
 
 class SupplierDebtEntry(BaseModel):
-    supplier_id: int
+    supplier_id: str
     supplier_name: str
     company: Optional[str]
     phone: Optional[str]
@@ -63,7 +63,7 @@ class DebtPaymentCreate(BaseModel):
 class DebtPaymentResponse(BaseModel):
     success: bool
     entity_type: str          # customer / supplier
-    entity_id: int
+    entity_id: str
     entity_name: str
     amount_paid: float
     debt_before: float

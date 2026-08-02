@@ -34,7 +34,7 @@ def list_movements(
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     q = db.query(StockMovement).filter(StockMovement.store_id == store_id)
     if product_id:
@@ -46,11 +46,11 @@ def list_movements(
 
 @router.get("/movements/product/{product_id}", response_model=List[StockMovementResponse], summary="حركات منتج محدد")
 def product_movements(
-    product_id: int,
+    product_id: str,
     limit: int = Query(30, ge=1, le=100),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     product = db.query(Product).filter(Product.id == product_id, Product.store_id == store_id).first()
     if not product:
@@ -69,7 +69,7 @@ def create_manual_movement(
     data: StockMovementCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     للتعديل اليدوي فقط: adjustment_in / adjustment_out / damaged / expired.
@@ -107,7 +107,7 @@ def list_batches(
     limit: int = 50,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     from datetime import date, timedelta
     q = db.query(ProductBatch).filter(ProductBatch.store_id == store_id)
@@ -126,7 +126,7 @@ def add_batch_purchase(
     data: BatchCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     يضيف دُفعة شراء جديدة:
@@ -177,13 +177,13 @@ def add_batch_purchase(
 
 @router.patch("/batches/{batch_id}", response_model=BatchResponse, summary="تعديل دُفعة")
 def update_batch(
-    batch_id: int,
+    batch_id: str,
     expiry_date: Optional[str] = None,
     batch_number: Optional[str] = None,
     notes: Optional[str] = None,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     batch = db.query(ProductBatch).filter(
         ProductBatch.id == batch_id, ProductBatch.store_id == store_id,
@@ -215,7 +215,7 @@ def expiry_alerts(
     days_ahead: int = Query(30, ge=1, le=365, description="كم يوم قادم تريد التنبيه عنه"),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     return get_expiry_alerts(db, store_id, days_ahead)
 
@@ -224,7 +224,7 @@ def expiry_alerts(
 def low_stock_alerts(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     return get_low_stock_alerts(db, store_id)
 
@@ -233,7 +233,7 @@ def low_stock_alerts(
 def alerts_summary(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     low_stock = get_low_stock_alerts(db, store_id)
     expiry = get_expiry_alerts(db, store_id, days_ahead=30)
@@ -255,7 +255,7 @@ def generate_barcode(
     data: BarcodeGenerateRequest,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     يولّد زوج باركود (قطعة + كرتونة) غير مستخدمَين ضمن نفس المحل.
@@ -291,7 +291,7 @@ def barcode_lookup(
     barcode: str,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     يبحث في باركود القطعة والكرتونة معاً ويرجع تفاصيل المنتج.
@@ -340,10 +340,10 @@ def barcode_lookup(
 
 @router.get("/barcode/internal/{product_id}", summary="توليد باركود داخلي للمنتج")
 def get_internal_barcode(
-    product_id: int,
+    product_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """للمنتجات التي ليس لها باركود — يولّد كوداً داخلياً"""
     product = db.query(Product).filter(Product.id == product_id, Product.store_id == store_id).first()
@@ -366,7 +366,7 @@ def get_internal_barcode(
 def inventory_stats(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     from app.models.product import Product
 

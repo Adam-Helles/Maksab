@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -15,12 +16,12 @@ class RefreshToken(Base, TimestampMixin):
     """
     __tablename__ = "refresh_tokens"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # المعرّف الفريد المطمور جوا الـ JWT نفسه — هو مصدر الحقيقة للمطابقة
     jti = Column(String(36), unique=True, nullable=False, index=True)
 
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
 
     is_revoked = Column(Boolean, default=False, nullable=False)
     expires_at = Column(DateTime(timezone=False), nullable=False)

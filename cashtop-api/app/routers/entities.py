@@ -27,7 +27,7 @@ def list_categories(
     active_only: bool = True,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     q = db.query(Category).filter(Category.store_id == store_id)
     if active_only:
@@ -40,7 +40,7 @@ def create_category(
     data: CategoryCreate,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     exists = db.query(Category).filter(
         Category.store_id == store_id,
@@ -57,11 +57,11 @@ def create_category(
 
 @cat_router.patch("/{cat_id}", response_model=CategoryResponse)
 def update_category(
-    cat_id: int,
+    cat_id: str,
     data: CategoryUpdate,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     cat = db.query(Category).filter(Category.id == cat_id, Category.store_id == store_id).first()
     if not cat:
@@ -75,10 +75,10 @@ def update_category(
 
 @cat_router.delete("/{cat_id}")
 def delete_category(
-    cat_id: int,
+    cat_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     cat = db.query(Category).filter(Category.id == cat_id, Category.store_id == store_id).first()
     if not cat:
@@ -105,7 +105,7 @@ def list_suppliers(
     search: Optional[str] = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     q = db.query(Supplier).filter(Supplier.store_id == store_id, Supplier.is_deleted == False)
     if search:
@@ -118,7 +118,7 @@ def create_supplier(
     data: SupplierCreate,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     sup = Supplier(**data.model_dump(), store_id=store_id)
     db.add(sup)
@@ -129,10 +129,10 @@ def create_supplier(
 
 @sup_router.get("/{sup_id}", response_model=SupplierResponse)
 def get_supplier(
-    sup_id: int,
+    sup_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     sup = db.query(Supplier).filter(
         Supplier.id == sup_id, Supplier.store_id == store_id, Supplier.is_deleted == False,
@@ -144,10 +144,10 @@ def get_supplier(
 
 @sup_router.patch("/{sup_id}", response_model=SupplierResponse)
 def update_supplier(
-    sup_id: int, data: SupplierUpdate,
+    sup_id: str, data: SupplierUpdate,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     sup = db.query(Supplier).filter(
         Supplier.id == sup_id, Supplier.store_id == store_id, Supplier.is_deleted == False,
@@ -163,10 +163,10 @@ def update_supplier(
 
 @sup_router.delete("/{sup_id}")
 def delete_supplier(
-    sup_id: int,
+    sup_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     sup = db.query(Supplier).filter(Supplier.id == sup_id, Supplier.store_id == store_id).first()
     if not sup:
@@ -189,7 +189,7 @@ def list_customers(
     has_debt: Optional[bool] = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     q = db.query(Customer).filter(Customer.store_id == store_id, Customer.is_deleted == False)
     if search:
@@ -207,7 +207,7 @@ def create_customer(
     data: CustomerCreate,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     cust = Customer(**data.model_dump(), store_id=store_id)
     db.add(cust)
@@ -218,10 +218,10 @@ def create_customer(
 
 @cust_router.get("/{cust_id}", response_model=CustomerResponse)
 def get_customer(
-    cust_id: int,
+    cust_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     # ⚠️ الفلترة بـ store_id هون هي يلي بتمنع أي مستخدم من تصفح بيانات
     # عملاء تجار تانيين عبر تجربة IDs متسلسلة.
@@ -235,10 +235,10 @@ def get_customer(
 
 @cust_router.patch("/{cust_id}", response_model=CustomerResponse)
 def update_customer(
-    cust_id: int, data: CustomerUpdate,
+    cust_id: str, data: CustomerUpdate,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     cust = db.query(Customer).filter(
         Customer.id == cust_id, Customer.store_id == store_id, Customer.is_deleted == False,
@@ -254,10 +254,10 @@ def update_customer(
 
 @cust_router.delete("/{cust_id}")
 def delete_customer(
-    cust_id: int,
+    cust_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     cust = db.query(Customer).filter(Customer.id == cust_id, Customer.store_id == store_id).first()
     if not cust:

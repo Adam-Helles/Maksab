@@ -25,7 +25,7 @@ router = APIRouter(prefix="/finance", tags=["💰 المالية والديون"
 def financial_summary(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     from datetime import date
 
@@ -96,7 +96,7 @@ def customer_debts(
     skip: int = 0, limit: int = 50,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     q = db.query(Customer).filter(
         Customer.store_id == store_id,
@@ -142,10 +142,10 @@ def customer_debts(
 
 @router.get("/customers/{customer_id}/statement", summary="كشف حساب عميل")
 def customer_statement(
-    customer_id: int,
+    customer_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """كشف حساب كامل للعميل — كل الفواتير والدفعات"""
     # ⚠️ فلترة store_id إجبارية — وإلا أي مستخدم يقدر يشوف كشف حساب
@@ -207,11 +207,11 @@ def customer_statement(
 
 @router.post("/customers/{customer_id}/pay", response_model=DebtPaymentResponse, summary="تسجيل دفعة من عميل")
 def customer_pay_debt(
-    customer_id: int,
+    customer_id: str,
     data: DebtPaymentCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     يسجّل دفعة من عميل خارج أي فاتورة محددة.
@@ -285,7 +285,7 @@ def supplier_debts(
     skip: int = 0, limit: int = 50,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     q = db.query(Supplier).filter(
         Supplier.store_id == store_id,
@@ -322,10 +322,10 @@ def supplier_debts(
 
 @router.get("/suppliers/{supplier_id}/statement", summary="كشف حساب مورد")
 def supplier_statement(
-    supplier_id: int,
+    supplier_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     from app.models.invoice import Invoice, InvoiceType, Payment
     supplier = db.query(Supplier).filter(
@@ -395,11 +395,11 @@ def supplier_statement(
 
 @router.post("/suppliers/{supplier_id}/pay", response_model=DebtPaymentResponse, summary="تسجيل دفعة لمورد")
 def supplier_pay_debt(
-    supplier_id: int,
+    supplier_id: str,
     data: DebtPaymentCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """يسجّل دفعة نقدنا للمورد"""
     supplier = db.query(Supplier).filter(
@@ -436,7 +436,7 @@ def profit_report(
     period: str = Query("month", pattern="^(today|week|month|year|all)$"),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     from datetime import date, timedelta
 
@@ -504,7 +504,7 @@ def profit_report(
 def repair_customer_debts(
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     يُعيد حساب current_debt لكل عميل من مجموع remaining_amount
@@ -541,4 +541,4 @@ def repair_customer_debts(
     return {
         "fixed_count": len(fixed),
         "fixed": fixed,
-    }
+    }

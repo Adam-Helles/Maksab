@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -12,10 +13,10 @@ class Category(Base, TimestampMixin):
         UniqueConstraint("store_id", "name", name="uq_store_category_name"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # ─── عزل التاجر ────────────────────────────────────────
-    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    store_id = Column(String(36), ForeignKey("stores.id"), nullable=False, index=True)
 
     name = Column(String(100), nullable=False, index=True)  # شلنا unique=True المفردة
     name_ar = Column(String(100), nullable=True)

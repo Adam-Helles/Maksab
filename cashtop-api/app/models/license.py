@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -7,12 +8,12 @@ from app.models.base import TimestampMixin
 class LicenseKey(Base, TimestampMixin):
     __tablename__ = "license_keys"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     key = Column(String(50), unique=True, nullable=False, index=True)
     days_valid = Column(Integer, nullable=False)
     
     is_used = Column(Boolean, default=False, nullable=False)
-    used_by_store_id = Column(Integer, ForeignKey("stores.id"), nullable=True)
+    used_by_store_id = Column(String(36), ForeignKey("stores.id"), nullable=True)
     used_at = Column(DateTime(timezone=True), nullable=True)
 
     store = relationship("Store")

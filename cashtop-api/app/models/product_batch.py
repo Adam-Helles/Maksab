@@ -1,3 +1,4 @@
+import uuid
 from sqlalchemy import Column, Integer, String, Float, Date, ForeignKey, Boolean, Text
 from sqlalchemy.orm import relationship
 from app.database import Base
@@ -10,14 +11,14 @@ class ProductBatch(Base, TimestampMixin):
     """
     __tablename__ = "product_batches"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # ─── عزل التاجر ────────────────────────────────────────
     # ضروري لأنه routers/inventory.py يستعلم عن ProductBatch مباشرة
     # (list_batches, update_batch) بدون join إجباري مع Product دايماً.
-    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    store_id = Column(String(36), ForeignKey("stores.id"), nullable=False, index=True)
 
-    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    product_id = Column(String(36), ForeignKey("products.id"), nullable=False, index=True)
 
     batch_number = Column(String(50), nullable=True)
     barcode_override = Column(String(50), nullable=True)
@@ -26,8 +27,8 @@ class ProductBatch(Base, TimestampMixin):
     cost_price = Column(Float, default=0.0)
     expiry_date = Column(Date, nullable=True)
 
-    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
-    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)
+    supplier_id = Column(String(36), ForeignKey("suppliers.id"), nullable=True)
+    invoice_id = Column(String(36), ForeignKey("invoices.id"), nullable=True)
 
     is_active = Column(Boolean, default=True)
     notes = Column(Text, nullable=True)

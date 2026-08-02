@@ -32,7 +32,7 @@ def push_payments(
     payload: PaymentPushRequest,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     كل دفعة = حدث مستقل يُطبَّق فوق آخر رصيد، مش رقم نهائي يستبدل current_debt.
@@ -121,7 +121,7 @@ def push_debts(
     payload: DebtPushRequest,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     إضافة ديون يدوية — يتم تسجيلها كفاتورة آجل (Invoice) مع بند واحد عام.
@@ -227,7 +227,7 @@ def push_profiles(
     payload: ProfilePushRequest,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     تعديلات بيانات العميل — Last-Write-Wins بمقارنة updated_at.
@@ -269,7 +269,7 @@ def pull_customers(
     since: Optional[datetime] = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     يرجّع كل عميل تغيّر (بيانات أو دين) بعد آخر مزامنة — ضمن محل

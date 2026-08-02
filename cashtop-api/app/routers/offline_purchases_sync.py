@@ -20,7 +20,7 @@ def push_offline_purchases(
     payload: OfflinePurchasePushRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     results = [
         sync_offline_purchase(db, store_id, current_user.id, purchase)

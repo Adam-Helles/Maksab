@@ -1,3 +1,4 @@
+import uuid
 # app/models/debt_payment.py
 #
 # كل دفعة بتنسجل كـ "حدث" مستقل (id فريد يتولد من الجهاز)، مش كتعديل
@@ -19,9 +20,9 @@ class DebtPayment(Base):
     # دفاع بالعمق: حتى لو الراوتر نسي يتحقق من customer.store_id بمكان
     # ما، وجود store_id مباشرة هون بيسمح تعمل فلترة/تدقيق مستقل على
     # جدول الدفعات نفسه (مثلاً تقرير "كل الدفعات بمحل X" بدون join).
-    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    store_id = Column(String(36), ForeignKey("stores.id"), nullable=False, index=True)
 
-    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    customer_id = Column(String(36), ForeignKey("customers.id"), nullable=False, index=True)
     amount = Column(Float, nullable=False)
     method = Column(String, default="cash")
 

@@ -17,7 +17,7 @@ TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 
-def _validate_store(db: Session, store_id: int) -> Store:
+def _validate_store(db: Session, store_id: str) -> Store:
     """
     ⚠️ إصلاح حرج: هاد الـ endpoint عام بدون تسجيل دخول (بالتصميم —
     للعملاء). قبل هالتعديل ما كان في أي تمييز بين المحلات، يعني
@@ -34,12 +34,12 @@ def _validate_store(db: Session, store_id: int) -> Store:
 @router.get("", response_class=HTMLResponse, summary="المنيو الإلكتروني (صفحة ويب عامة)")
 def digital_menu(
     request: Request,
-    store_id: int = Query(..., description="معرّف المحل — إجباري، كل تاجر له رابط بمعرّفه الخاص"),
+    store_id: str = Query(..., description="معرّف المحل — إجباري، كل تاجر له رابط بمعرّفه الخاص"),
     shop_name: str = Query("محلي", description="اسم المحل"),
     shop_subtitle: str = Query("أفضل المنتجات بأفضل الأسعار", description="الشعار"),
     whatsapp_phone: str = Query("970599000000", description="رقم واتساب للطلب"),
     currency: str = Query("₪", description="العملة"),
-    category_id: int = Query(None, description="فلتر صنف محدد"),
+    category_id: str = Query(None, description="فلتر صنف محدد"),
     featured_only: bool = Query(False, description="المنتجات المميزة فقط"),
     db: Session = Depends(get_db),
 ):
@@ -98,8 +98,8 @@ def digital_menu(
 
 @router.get("/products", summary="منتجات المنيو (JSON للـ API)")
 def menu_products_api(
-    store_id: int = Query(..., description="معرّف المحل — إجباري"),
-    category_id: int = Query(None),
+    store_id: str = Query(..., description="معرّف المحل — إجباري"),
+    category_id: str = Query(None),
     featured_only: bool = Query(False),
     search: str = Query(None),
     db: Session = Depends(get_db),

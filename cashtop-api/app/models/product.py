@@ -1,3 +1,4 @@
+import uuid
 import enum
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, Date, Text, ForeignKey,
@@ -26,10 +27,10 @@ class Product(Base, TimestampMixin, SoftDeleteMixin):
         UniqueConstraint("store_id", "barcode_carton", name="uq_store_barcode_carton"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # ─── عزل التاجر ────────────────────────────────────────
-    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    store_id = Column(String(36), ForeignKey("stores.id"), nullable=False, index=True)
 
     # ─── معلومات أساسية ───────────────────────────────────
     name = Column(String(200), nullable=False, index=True)
@@ -63,8 +64,8 @@ class Product(Base, TimestampMixin, SoftDeleteMixin):
     has_expiry = Column(Boolean, default=False, nullable=False)
 
     # ─── تصنيف وعلاقات ────────────────────────────────────
-    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
-    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)
+    category_id = Column(String(36), ForeignKey("categories.id"), nullable=True)
+    supplier_id = Column(String(36), ForeignKey("suppliers.id"), nullable=True)
 
     # إعدادات إضافية
     is_active = Column(Boolean, default=True, nullable=False)

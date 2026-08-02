@@ -1,3 +1,4 @@
+import uuid
 import enum
 from sqlalchemy import Column, Integer, String, Float, Boolean, Date, Text, ForeignKey, Enum as SAEnum
 from sqlalchemy.orm import relationship
@@ -15,13 +16,13 @@ class SalaryType(str, enum.Enum):
 class Employee(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "employees"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # ─── عزل التاجر ────────────────────────────────────────
-    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    store_id = Column(String(36), ForeignKey("stores.id"), nullable=False, index=True)
 
     # ربط بالمستخدم (اختياري — موظف قد لا يملك حساب دخول)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, unique=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=True, unique=True)
 
     # ─── المعلومات الشخصية ─────────────────────────────────
     full_name = Column(String(150), nullable=False, index=True)

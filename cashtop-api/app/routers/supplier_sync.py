@@ -30,7 +30,7 @@ def push_supplier_payments(
     payload: SupplierPaymentPushRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     رفع دفعات للموردين من الموبايل إلى السيرفر.
@@ -72,7 +72,7 @@ def push_supplier_debts(
     payload: SupplierDebtPushRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     رفع ديون جديدة للموردين من الموبايل إلى السيرفر.
@@ -105,7 +105,7 @@ def push_supplier_profiles(
     payload: SupplierProfilePushRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     تعديلات بيانات الموردين — Last-Write-Wins بمقارنة updated_at.
@@ -148,7 +148,7 @@ def pull_suppliers(
     since: Optional[datetime] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     يرجع كل المورد الذي تغيّر بعد آخر مزامنة — ضمن محل المستخدم فقط.

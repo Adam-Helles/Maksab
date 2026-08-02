@@ -1,3 +1,4 @@
+import uuid
 import enum
 from sqlalchemy import Column, Integer, String, Boolean, Enum as SAEnum, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
@@ -14,13 +15,13 @@ class UserRole(str, enum.Enum):
 class User(Base, TimestampMixin):
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # ─── عزل التاجر (Tenant Isolation) ────────────────────
     # هاد العمود هو مصدر الحقيقة الوحيد لتحديد أي محل ينتمي له المستخدم.
     # كل عملية بالنظام لازم تفلتر بناءً عليه — أبداً لا تثق بـ store_id
     # جاي من body/query المستخدم نفسه.
-    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    store_id = Column(String(36), ForeignKey("stores.id"), nullable=False, index=True)
 
     # ملاحظة: username فريد globally حالياً. لو بدك تسمح لتاجرين مختلفين
     # يستخدموا نفس username (مثلاً "admin")، لازم تحول الـ unique constraint

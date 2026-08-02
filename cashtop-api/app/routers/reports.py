@@ -26,7 +26,7 @@ def export_excel(
     date_to:   Optional[date] = Query(None, description="إلى تاريخ YYYY-MM-DD"),
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     xlsx_bytes = generate_excel_report(db, store_id, report_type, date_from, date_to)
 
@@ -46,7 +46,7 @@ def export_sales_excel(
     date_to:   Optional[date] = None,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     xlsx_bytes = generate_excel_report(db, store_id, "sales", date_from, date_to)
     today = date.today().strftime("%Y%m%d")
@@ -61,7 +61,7 @@ def export_sales_excel(
 def export_inventory_excel(
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     xlsx_bytes = generate_excel_report(db, store_id, "inventory")
     today = date.today().strftime("%Y%m%d")
@@ -76,7 +76,7 @@ def export_inventory_excel(
 def export_debts_excel(
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     xlsx_bytes = generate_excel_report(db, store_id, "debts")
     today = date.today().strftime("%Y%m%d")
@@ -93,10 +93,10 @@ def export_debts_excel(
 
 @router.get("/pdf/invoice/{invoice_id}", summary="تصدير فاتورة PDF")
 def export_invoice_pdf(
-    invoice_id: int,
+    invoice_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     يولّد فاتورة PDF جاهزة للطباعة أو الإرسال.
@@ -121,7 +121,7 @@ def export_sales_pdf(
     date_to:    Optional[date] = None,
     db: Session = Depends(get_db),
     _: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     pdf_bytes = generate_sales_pdf(db, store_id, date_from, date_to)
     today = date.today().strftime("%Y%m%d")

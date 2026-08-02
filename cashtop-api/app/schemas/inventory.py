@@ -10,7 +10,7 @@ from app.models.stock_movement import MovementType
 
 class StockMovementCreate(BaseModel):
     """لتعديل يدوي من الـ API (adjustment فقط)"""
-    product_id: int
+    product_id: str
     movement_type: MovementType
     quantity: float
     unit_type: str = "piece"       # piece | carton
@@ -34,8 +34,8 @@ class StockMovementCreate(BaseModel):
 
 
 class StockMovementResponse(BaseModel):
-    id: int
-    product_id: int
+    id: str
+    product_id: str
     movement_type: MovementType
     quantity: float
     unit_type: str
@@ -44,7 +44,7 @@ class StockMovementResponse(BaseModel):
     stock_after: float
     unit_cost: float
     invoice_id: Optional[int]
-    user_id: int
+    user_id: str
     notes: Optional[str]
     reference: Optional[str]
     created_at: datetime
@@ -57,26 +57,26 @@ class StockMovementResponse(BaseModel):
 # ══════════════════════════════════════════════════════════
 
 class BatchCreate(BaseModel):
-    product_id: int
+    product_id: str
     quantity: float
     unit_type: str = "piece"
     cost_price: float = 0.0
     expiry_date: Optional[date] = None
     batch_number: Optional[str] = None
-    supplier_id: Optional[int] = None
+    supplier_id: Optional[str] = None
     notes: Optional[str] = None
 
 
 class BatchResponse(BaseModel):
-    id: int
-    product_id: int
+    id: str
+    product_id: str
     batch_number: Optional[str]
     quantity: float
     cost_price: float
     expiry_date: Optional[date]
     is_expired: bool
     days_until_expiry: Optional[int]
-    supplier_id: Optional[int]
+    supplier_id: Optional[str]
     is_active: bool
     created_at: datetime
 
@@ -112,13 +112,13 @@ class BarcodeGenerateResponse(BaseModel):
 # ══════════════════════════════════════════════════════════
 
 class LowStockAlert(BaseModel):
-    id: int
+    id: str
     name: str
     barcode: Optional[str]
     current_stock: float
     min_stock_alert: float
     stock_in_cartons: float
-    supplier_id: Optional[int]
+    supplier_id: Optional[str]
     category: Optional[str]
     severity: str   # critical | warning
 

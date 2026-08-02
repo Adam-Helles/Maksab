@@ -49,7 +49,7 @@ class UserChangePassword(BaseModel):
 
 
 class UserResponse(BaseModel):
-    id: int
+    id: str
     username: str
     full_name: str
     email: Optional[str]

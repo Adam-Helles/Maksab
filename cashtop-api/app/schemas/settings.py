@@ -13,7 +13,7 @@ class StoreSettingsUpdate(BaseModel):
 
 
 class StoreSettingsOut(BaseModel):
-    id: int
+    id: str
     store_name: str
     logo_url: Optional[str] = None
     currency: str

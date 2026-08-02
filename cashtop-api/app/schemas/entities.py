@@ -22,7 +22,7 @@ class CategoryUpdate(BaseModel):
 
 
 class CategoryResponse(BaseModel):
-    id: int
+    id: str
     name: str
     name_ar: Optional[str]
     description: Optional[str]
@@ -59,7 +59,7 @@ class SupplierUpdate(BaseModel):
 
 
 class SupplierResponse(BaseModel):
-    id: int
+    id: str
     name: str
     company: Optional[str]
     phone: Optional[str]
@@ -95,7 +95,7 @@ class CustomerUpdate(BaseModel):
 
 
 class CustomerResponse(BaseModel):
-    id: int
+    id: str
     name: str
     phone: Optional[str]
     email: Optional[str]

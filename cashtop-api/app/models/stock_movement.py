@@ -1,3 +1,4 @@
+import uuid
 import enum
 from sqlalchemy import Column, Integer, String, Float, Text, ForeignKey, Enum as SAEnum
 from sqlalchemy.orm import relationship
@@ -24,15 +25,15 @@ class StockMovement(Base, TimestampMixin):
     """
     __tablename__ = "stock_movements"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
 
     # ─── عزل التاجر ────────────────────────────────────────
     # جدول حساس جداً (القلب المالي للمخزون) — لازم يكون معزول بشكل
     # مباشر، مش بس عبر product_id → product.store_id، حتى تقارير
     # حركات المخزون تقدر تفلتر عليه مباشرة بدون join.
-    store_id = Column(Integer, ForeignKey("stores.id"), nullable=False, index=True)
+    store_id = Column(String(36), ForeignKey("stores.id"), nullable=False, index=True)
 
-    product_id = Column(Integer, ForeignKey("products.id"), nullable=False, index=True)
+    product_id = Column(String(36), ForeignKey("products.id"), nullable=False, index=True)
 
     movement_type = Column(SAEnum(MovementType), nullable=False)
     quantity = Column(Float, nullable=False)
@@ -44,8 +45,8 @@ class StockMovement(Base, TimestampMixin):
 
     unit_cost = Column(Float, default=0.0)
 
-    invoice_id = Column(Integer, ForeignKey("invoices.id"), nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    invoice_id = Column(String(36), ForeignKey("invoices.id"), nullable=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False)
 
     notes = Column(Text, nullable=True)
     reference = Column(String(100), nullable=True)

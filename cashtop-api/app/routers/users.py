@@ -17,7 +17,7 @@ def list_users(
     is_active: Optional[bool] = None,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     # ⚠️ بدون فلترة store_id، أدمن أي محل كان يشوف مستخدمي كل التجار
     q = db.query(User).filter(User.store_id == store_id)
@@ -31,7 +31,7 @@ def create_user(
     data: UserCreate,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=400, detail="اسم المستخدم موجود مسبقاً")
@@ -55,10 +55,10 @@ def create_user(
 
 @router.get("/{user_id}", response_model=UserResponse, summary="بيانات مستخدم")
 def get_user(
-    user_id: int,
+    user_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     # المستخدم يرى بياناته فقط، الأدمن يرى مستخدمي محله فقط
     if current_user.role != UserRole.ADMIN and current_user.id != user_id:
@@ -73,11 +73,11 @@ def get_user(
 
 @router.patch("/{user_id}", response_model=UserResponse, summary="تعديل مستخدم")
 def update_user(
-    user_id: int,
+    user_id: str,
     data: UserUpdate,
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     user = db.query(User).filter(User.id == user_id, User.store_id == store_id).first()
     if not user:
@@ -96,11 +96,11 @@ def update_user(
 
 @router.post("/{user_id}/change-password", summary="تغيير كلمة المرور")
 def change_password(
-    user_id: int,
+    user_id: str,
     data: UserChangePassword,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     if current_user.role != UserRole.ADMIN and current_user.id != user_id:
         raise HTTPException(status_code=403, detail="غير مصرح")
@@ -119,10 +119,10 @@ def change_password(
 
 @router.delete("/{user_id}", summary="حذف مستخدم")
 def delete_user(
-    user_id: int,
+    user_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_admin),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     if current_user.id == user_id:
         raise HTTPException(status_code=400, detail="لا يمكنك حذف حسابك أنت")

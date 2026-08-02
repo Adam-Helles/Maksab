@@ -21,7 +21,7 @@ def push_product_profiles(
     payload: ProductProfilePushRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     accepted = []
     overwritten_by_server = []
@@ -67,7 +67,7 @@ def pull_products(
     since: Optional[datetime] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     query = db.query(Product).filter(
         Product.store_id == store_id,

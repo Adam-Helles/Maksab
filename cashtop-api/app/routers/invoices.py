@@ -58,7 +58,7 @@ def _build_response(invoice: Invoice, request: Request, db: Session) -> dict:
     }
 
 
-def _get_owned_invoice(db: Session, invoice_id: int, store_id: int) -> Invoice:
+def _get_owned_invoice(db: Session, invoice_id: str, store_id: str) -> Invoice:
     """
     مساعد مشترك: يجيب الفاتورة فقط إذا كانت تخص محل المستخدم الحالي.
     ⚠️ استخدم هاد الدالة حصراً بدل db.query(Invoice).filter(Invoice.id == ...)
@@ -83,7 +83,7 @@ def create(
     request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """
     ينشئ فاتورة بيع أو شراء.
@@ -116,7 +116,7 @@ def list_invoices(
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     q = db.query(Invoice).filter(Invoice.store_id == store_id)
     if invoice_type:
@@ -144,7 +144,7 @@ def list_invoices(
 def list_drafts(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     return (
         db.query(Invoice)
@@ -160,11 +160,11 @@ def list_drafts(
 
 @router.get("/{invoice_id}", summary="تفاصيل فاتورة")
 def get_invoice(
-    invoice_id: int,
+    invoice_id: str,
     request: Request,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     invoice = _get_owned_invoice(db, invoice_id, store_id)
     return _build_response(invoice, request, db)
@@ -176,12 +176,12 @@ def get_invoice(
 
 @router.post("/{invoice_id}/items", summary="إضافة صنف لفاتورة معلّقة")
 def add_item(
-    invoice_id: int,
+    invoice_id: str,
     data: InvoiceAddItem,
     request: Request,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     invoice = _get_owned_invoice(db, invoice_id, store_id)
     if invoice.status != InvoiceStatus.DRAFT:
@@ -242,12 +242,12 @@ def add_item(
 
 @router.delete("/{invoice_id}/items/{item_id}", summary="حذف صنف من فاتورة معلّقة")
 def remove_item(
-    invoice_id: int,
-    item_id: int,
+    invoice_id: str,
+    item_id: str,
     request: Request,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     invoice = _get_owned_invoice(db, invoice_id, store_id)
     if invoice.status != InvoiceStatus.DRAFT:
@@ -276,12 +276,12 @@ def remove_item(
 
 @router.patch("/{invoice_id}/discount", summary="تعديل الخصم والضريبة")
 def update_discount(
-    invoice_id: int,
+    invoice_id: str,
     data: InvoiceUpdateDiscount,
     request: Request,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     invoice = _get_owned_invoice(db, invoice_id, store_id)
     if invoice.status != InvoiceStatus.DRAFT:
@@ -301,12 +301,12 @@ def update_discount(
 
 @router.post("/{invoice_id}/complete", summary="إكمال فاتورة معلّقة")
 def complete_invoice(
-    invoice_id: int,
+    invoice_id: str,
     request: Request,
     paid_amount: float = Query(default=0.0, ge=0),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     invoice = _get_owned_invoice(db, invoice_id, store_id)
     try:
@@ -322,12 +322,12 @@ def complete_invoice(
 
 @router.post("/{invoice_id}/cancel", summary="إلغاء فاتورة")
 def cancel(
-    invoice_id: int,
+    invoice_id: str,
     request: Request,
     reason: str = "",
     db: Session = Depends(get_db),
     current_user: User = Depends(require_manager_or_above),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     invoice = _get_owned_invoice(db, invoice_id, store_id)
     try:
@@ -343,11 +343,11 @@ def cancel(
 
 @router.post("/{invoice_id}/payments", response_model=PaymentResponse, summary="إضافة دفعة")
 def add_payment(
-    invoice_id: int,
+    invoice_id: str,
     data: PaymentAdd,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     """يضيف دفعة جزئية أو كاملة على فاتورة آجلة"""
     invoice = _get_owned_invoice(db, invoice_id, store_id)
@@ -366,10 +366,10 @@ def add_payment(
 
 @router.get("/{invoice_id}/payments", response_model=List[PaymentResponse], summary="سجل دفعات فاتورة")
 def invoice_payments(
-    invoice_id: int,
+    invoice_id: str,
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     invoice = _get_owned_invoice(db, invoice_id, store_id)
     return invoice.payments
@@ -438,7 +438,7 @@ def public_invoice(token: str, db: Session = Depends(get_db)):
 def today_stats(
     db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
-    store_id: int = Depends(get_current_store_id),
+    store_id: str = Depends(get_current_store_id),
 ):
     from datetime import date
     from sqlalchemy import func

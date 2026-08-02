@@ -9,7 +9,7 @@ from pydantic import BaseModel
 # ─── دفعات (events) ─────────────────────────────────────────
 class PaymentEventIn(BaseModel):
     id: str  # UUID من الجهاز
-    customer_id: int
+    customer_id: str
     amount: float
     method: str = "cash"
     client_created_at: datetime
@@ -21,7 +21,7 @@ class PaymentPushRequest(BaseModel):
 # ─── ديون يدوية (events) ─────────────────────────────────────────
 class DebtEventIn(BaseModel):
     id: str  # UUID من الجهاز
-    customer_id: int
+    customer_id: str
     amount: float
     notes: Optional[str] = None
     client_created_at: datetime
@@ -32,7 +32,7 @@ class DebtPushRequest(BaseModel):
 
 # ─── تعديل بيانات العميل (last-write-wins آمن، بدون current_debt) ──
 class ProfileUpdateIn(BaseModel):
-    id: int
+    id: str
     name: Optional[str] = None
     phone: Optional[str] = None
     phone2: Optional[str] = None
@@ -48,7 +48,7 @@ class ProfilePushRequest(BaseModel):
 
 # ─── سحب أي تحديثات من السيرفر ──────────────────────────────
 class CustomerSyncOut(BaseModel):
-    id: int
+    id: str
     name: str
     phone: Optional[str]
     phone2: Optional[str]

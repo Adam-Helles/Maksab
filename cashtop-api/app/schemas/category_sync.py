@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class CategorySyncOut(BaseModel):
-    id: int
+    id: str
     name: str
     name_ar: Optional[str] = None
     color: Optional[str] = None
@@ -23,7 +23,7 @@ class CategoryPullResponse(BaseModel):
 
 
 class CategoryProfileUpdateIn(BaseModel):
-    id: int
+    id: str
     name: Optional[str] = None
     name_ar: Optional[str] = None
     color: Optional[str] = None
