@@ -6,12 +6,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Updates from 'expo-updates';
 import { useAuthStore } from '../src/store/authStore';
 import { initDatabase } from '../src/db/database';
-import { initCustomerTables } from '../src/db/customerSync';
-import { initSupplierTables } from '../src/db/supplierSync';
-import { initCategoryTables } from '../src/db/categorySync';
-import { initProductsCache } from '../src/db/productsCache';
-import { initOfflineSalesTable } from '../src/db/offlineSales';
-import { initOfflinePurchasesTable } from '../src/db/offlinePurchases';
 import { initApiConfig } from '../src/api/client';
 
 export default function RootLayout() {
@@ -38,15 +32,10 @@ export default function RootLayout() {
   }, []);
 
   // تهيئة قاعدة البيانات المحلية (SQLite) عند بدء التطبيق
+  // initDatabase() تنشئ جميع الجداول الجديدة وتقوم بالهجرة من البنية القديمة تلقائياً
   useEffect(() => {
     initApiConfig();
     initDatabase();
-    initCustomerTables();
-    initSupplierTables();
-    initCategoryTables();
-    initProductsCache();
-    initOfflineSalesTable();
-    initOfflinePurchasesTable();
   }, []);
 
   // استعادة الجلسة عند بدء التطبيق

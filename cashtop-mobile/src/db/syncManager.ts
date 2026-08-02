@@ -316,3 +316,7 @@ export async function syncAll(): Promise<{ pushed: number; pulled: number; error
     return { pushed: 0, pulled: 0, error: error?.message || 'Unknown sync error' };
   }
 }
+
+// Alias للتوافق مع جميع الشاشات التي تستخدم runFullSync
+export const runFullSync = syncAll;
+
