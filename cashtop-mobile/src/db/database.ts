@@ -304,7 +304,7 @@ export function getAllCustomers(includeDeleted = false): LocalCustomer[] {
 export function searchCustomers(query: string, limit = 50): LocalCustomer[] {
   return db.getAllSync<LocalCustomer>(
     'SELECT * FROM customers WHERE name LIKE ? OR phone LIKE ? LIMIT ?',
-    \`%\${query}%\`, \`%\${query}%\`, limit
+    `%${query}%`, `%${query}%`, limit
   );
 }
 
@@ -319,20 +319,20 @@ export function upsertCustomer(data: Partial<LocalCustomer> & { id: string }): v
   if (existing) {
     const updated = { ...existing, ...data, updated_at: now };
     db.runSync(
-      \`UPDATE customers SET 
+      `UPDATE customers SET 
         name = ?, phone = ?, phone2 = ?, email = ?, address = ?, notes = ?,
         credit_limit = ?, current_debt = ?, is_active = ?, updated_at = ?, deleted_at = ?, sync_status = ?
-      WHERE id = ?\`,
+      WHERE id = ?`,
       updated.name, updated.phone, updated.phone2, updated.email, updated.address, updated.notes,
       updated.credit_limit, updated.current_debt, updated.is_active, updated.updated_at, updated.deleted_at, updated.sync_status,
       updated.id
     );
   } else {
     db.runSync(
-      \`INSERT INTO customers (
+      `INSERT INTO customers (
         id, name, phone, phone2, email, address, notes, credit_limit, current_debt,
         is_active, created_at, updated_at, deleted_at, sync_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       data.id, data.name || '', data.phone || null, data.phone2 || null, data.email || null,
       data.address || null, data.notes || null, data.credit_limit || 0, data.current_debt || 0,
       data.is_active !== undefined ? data.is_active : 1, data.created_at || now, now, data.deleted_at || null,
@@ -380,7 +380,7 @@ export function getAllProducts(includeInactive = false): LocalProduct[] {
 export function searchProducts(query: string, limit = 50): LocalProduct[] {
   return db.getAllSync<LocalProduct>(
     'SELECT * FROM products WHERE name LIKE ? OR barcode_piece LIKE ? OR barcode_carton LIKE ? LIMIT ?',
-    \`%\${query}%\`, \`%\${query}%\`, \`%\${query}%\`, limit
+    `%${query}%`, `%${query}%`, `%${query}%`, limit
   );
 }
 
@@ -402,11 +402,11 @@ export function upsertProduct(data: Partial<LocalProduct> & { id: string }): voi
   if (existing) {
     const updated = { ...existing, ...data, updated_at: now };
     db.runSync(
-      \`UPDATE products SET 
+      `UPDATE products SET 
         name = ?, name_ar = ?, barcode_piece = ?, barcode_carton = ?, retail_price = ?,
         carton_price = ?, cost_price = ?, tax_rate = ?, pieces_per_carton = ?, stock_quantity = ?,
         category_id = ?, supplier_id = ?, is_active = ?, updated_at = ?, deleted_at = ?, sync_status = ?
-      WHERE id = ?\`,
+      WHERE id = ?`,
       updated.name, updated.name_ar, updated.barcode_piece, updated.barcode_carton, updated.retail_price,
       updated.carton_price, updated.cost_price, updated.tax_rate, updated.pieces_per_carton, updated.stock_quantity,
       updated.category_id, updated.supplier_id, updated.is_active, updated.updated_at, updated.deleted_at, updated.sync_status,
@@ -414,11 +414,11 @@ export function upsertProduct(data: Partial<LocalProduct> & { id: string }): voi
     );
   } else {
     db.runSync(
-      \`INSERT INTO products (
+      `INSERT INTO products (
         id, name, name_ar, barcode_piece, barcode_carton, retail_price, carton_price,
         cost_price, tax_rate, pieces_per_carton, stock_quantity, category_id, supplier_id,
         is_active, created_at, updated_at, deleted_at, sync_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       data.id, data.name || '', data.name_ar || null, data.barcode_piece || null, data.barcode_carton || null,
       data.retail_price || 0, data.carton_price || 0, data.cost_price || 0, data.tax_rate || 0,
       data.pieces_per_carton || 1, data.stock_quantity || 0, data.category_id || null, data.supplier_id || null,
@@ -506,12 +506,12 @@ export function upsertInvoice(data: Partial<LocalInvoice> & { id: string }): voi
   if (existing) {
     const updated = { ...existing, ...data, updated_at: now };
     db.runSync(
-      \`UPDATE invoices SET 
+      `UPDATE invoices SET 
         invoice_number = ?, invoice_type = ?, status = ?, payment_method = ?, payment_status = ?,
         customer_id = ?, customer_name = ?, supplier_id = ?, subtotal = ?, discount_amount = ?,
         tax_amount = ?, total = ?, paid_amount = ?, remaining_amount = ?, notes = ?,
         updated_at = ?, sync_status = ?
-      WHERE id = ?\`,
+      WHERE id = ?`,
       updated.invoice_number, updated.invoice_type, updated.status, updated.payment_method, updated.payment_status,
       updated.customer_id, updated.customer_name, updated.supplier_id, updated.subtotal, updated.discount_amount,
       updated.tax_amount, updated.total, updated.paid_amount, updated.remaining_amount, updated.notes,
@@ -519,12 +519,12 @@ export function upsertInvoice(data: Partial<LocalInvoice> & { id: string }): voi
     );
   } else {
     db.runSync(
-      \`INSERT INTO invoices (
+      `INSERT INTO invoices (
         id, invoice_number, invoice_type, status, payment_method, payment_status,
         customer_id, customer_name, supplier_id, subtotal, discount_amount,
         tax_amount, total, paid_amount, remaining_amount, notes,
         created_at, updated_at, sync_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       data.id, data.invoice_number || null, data.invoice_type || 'sale', data.status || 'completed',
       data.payment_method || 'cash', data.payment_status || 'paid', data.customer_id || null,
       data.customer_name || null, data.supplier_id || null, data.subtotal || 0, data.discount_amount || 0,
@@ -539,19 +539,19 @@ export function upsertInvoiceItem(data: Partial<LocalInvoiceItem> & { id: string
   if (existing) {
     const updated = { ...existing, ...data };
     db.runSync(
-      \`UPDATE invoice_items SET 
+      `UPDATE invoice_items SET 
         invoice_id = ?, product_id = ?, product_name = ?, quantity = ?, unit_type = ?,
         unit_price = ?, cost_price = ?, pieces_per_carton = ?, total = ?
-      WHERE id = ?\`,
+      WHERE id = ?`,
       updated.invoice_id, updated.product_id, updated.product_name, updated.quantity, updated.unit_type,
       updated.unit_price, updated.cost_price, updated.pieces_per_carton, updated.total, updated.id
     );
   } else {
     db.runSync(
-      \`INSERT INTO invoice_items (
+      `INSERT INTO invoice_items (
         id, invoice_id, product_id, product_name, quantity, unit_type,
         unit_price, cost_price, pieces_per_carton, total
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       data.id, data.invoice_id, data.product_id, data.product_name || null, data.quantity || 1,
       data.unit_type || 'piece', data.unit_price || 0, data.cost_price || 0, data.pieces_per_carton || 1,
       data.total || 0
@@ -588,9 +588,9 @@ export function upsertSupplier(data: Partial<LocalSupplier> & { id: string }): v
   const now = new Date().toISOString();
   if (existing) {
     db.runSync(
-      \`UPDATE suppliers SET 
+      `UPDATE suppliers SET 
         name = ?, phone = ?, address = ?, notes = ?, current_balance = ?, updated_at = ?, sync_status = ?
-      WHERE id = ?\`,
+      WHERE id = ?`,
       data.name || existing.name, data.phone !== undefined ? data.phone : existing.phone,
       data.address !== undefined ? data.address : existing.address, data.notes !== undefined ? data.notes : existing.notes,
       data.current_balance !== undefined ? data.current_balance : existing.current_balance,
@@ -598,9 +598,9 @@ export function upsertSupplier(data: Partial<LocalSupplier> & { id: string }): v
     );
   } else {
     db.runSync(
-      \`INSERT INTO suppliers (
+      `INSERT INTO suppliers (
         id, name, phone, address, notes, current_balance, created_at, updated_at, sync_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)\`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       data.id, data.name || '', data.phone || null, data.address || null, data.notes || null,
       data.current_balance || 0, data.created_at || now, now, data.sync_status || 'synced'
     );
@@ -672,7 +672,7 @@ export function getPendingInvoiceItemsForInvoice(invoiceId: string): LocalInvoic
 // ----------------------------------------------------------------------
 
 export function markSynced(table: 'customers' | 'products' | 'invoices' | 'debt_payments', id: string): void {
-  db.runSync(\`UPDATE \${table} SET sync_status = 'synced' WHERE id = ?\`, id);
+  db.runSync(`UPDATE ${table} SET sync_status = 'synced' WHERE id = ?`, id);
 }
 
 // ----------------------------------------------------------------------
