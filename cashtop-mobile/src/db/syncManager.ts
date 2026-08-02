@@ -11,7 +11,6 @@
 
 import { api } from '../api/client';
 import {
-import {
   getLastSyncTime, setLastSyncTime,
   getPendingCustomers, getPendingProducts, getPendingInvoices,
   getPendingDebtPayments, getPendingInvoiceItemsForInvoice,
@@ -23,7 +22,8 @@ import {
   runInTransaction,
 } from './database';
 
-// ... (skipping to pullServerChanges)
+// ── Pull: اسحب التغييرات من السيرفر ─────────────────────────
+
 async function pullServerChanges() {
   const since = getLastSyncTime();
   const params: any = {};
@@ -231,6 +231,7 @@ function mapInvoiceItemForPush(item: LocalInvoiceItem) {
     unit_type: item.unit_type,
     unit_price: item.unit_price,
     cost_price: item.cost_price,
+    pieces_per_carton: item.pieces_per_carton,
     total: item.total,
   };
 }
@@ -243,5 +244,75 @@ function mapPaymentForPush(p: any) {
     method: p.method,
     notes: p.notes,
     created_at: p.created_at,
+    updated_at: p.created_at,
   };
+}
+
+// ── Push: ارفع التغييرات المحلية للسيرفر ─────────────────────
+
+async function pushLocalChanges() {
+  const customers = getPendingCustomers();
+  const products = getPendingProducts();
+  const invoices = getPendingInvoices();
+  const payments = getPendingDebtPayments();
+
+  // بناء invoice_items من الفواتير المعلقة
+  const invoiceItems: any[] = [];
+  for (const inv of invoices) {
+    const items = getPendingInvoiceItemsForInvoice(inv.id);
+    for (const item of items) {
+      invoiceItems.push(mapInvoiceItemForPush(item));
+    }
+  }
+
+  const hasChanges =
+    customers.length > 0 ||
+    products.length > 0 ||
+    invoices.length > 0 ||
+    payments.length > 0;
+
+  if (!hasChanges) return { pushed: 0 };
+
+  const { data } = await api.post('/sync/push', {
+    customers: customers.map(mapCustomerForPush),
+    products: products.map(mapProductForPush),
+    invoices: invoices.map(mapInvoiceForPush),
+    invoice_items: invoiceItems,
+    payments: payments.map(mapPaymentForPush),
+  });
+
+  // بعد قبول السيرفر، نعلّم كل عنصر على أنه synced
+  const accepted: string[] = data.accepted || [];
+
+  for (const c of customers) {
+    if (accepted.includes(c.id)) markSynced('customers', c.id);
+  }
+  for (const p of products) {
+    if (accepted.includes(p.id)) markSynced('products', p.id);
+  }
+  for (const inv of invoices) {
+    if (accepted.includes(inv.id)) markSynced('invoices', inv.id);
+  }
+  for (const pay of payments) {
+    if (accepted.includes(pay.id)) markSynced('debt_payments', pay.id);
+  }
+
+  return { pushed: accepted.length };
+}
+
+// ── syncAll: الدالة الرئيسية للمزامنة الكاملة ────────────────
+
+export async function syncAll(): Promise<{ pushed: number; pulled: number; error?: string }> {
+  try {
+    // 1. ارفع التغييرات المحلية أولاً
+    const { pushed } = await pushLocalChanges();
+
+    // 2. اسحب التغييرات من السيرفر
+    const { count: pulled } = await pullServerChanges();
+
+    return { pushed, pulled };
+  } catch (error: any) {
+    console.error('[SyncManager] Sync failed:', error?.message || error);
+    return { pushed: 0, pulled: 0, error: error?.message || 'Unknown sync error' };
+  }
 }
