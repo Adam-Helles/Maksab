@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -12,20 +12,40 @@ export default function RootLayout() {
   const { isAuthenticated, isLoading, restoreSession, isSubscriptionExpired, daysUntilExpiry } = useAuthStore();
   const router  = useRouter();
   const segments = useSegments();
+  
+  // حالات تتبع دورة OTA
+  const [otaStatus, setOtaStatus] = useState<string>('لم يبدأ');
+  const [otaError, setOtaError] = useState<string>('');
+  const [showOtaLogs, setShowOtaLogs] = useState<boolean>(true);
 
-  // تحقق من التحديثات الهوائية فور فتح التطبيق وطبّقها فوراً
+  // تحقق من التحديثات الهوائية فور فتح التطبيق وطبّقها فوراً مع تتبع كامل
   useEffect(() => {
     async function applyOTAUpdateIfAvailable() {
       try {
-        if (!__DEV__) {
-          const update = await Updates.checkForUpdateAsync();
-          if (update.isAvailable) {
-            await Updates.fetchUpdateAsync();
-            await Updates.reloadAsync();
-          }
+        if (__DEV__) {
+          setOtaStatus('وضع التطوير - تم تخطي التحديث');
+          return;
         }
-      } catch (e) {
-        // تجاهل أخطاء التحديث (مثلاً عند انقطاع الإنترنت)
+
+        setOtaStatus('جاري البحث عن تحديث...');
+        const update = await Updates.checkForUpdateAsync();
+        
+        if (update.isAvailable) {
+          setOtaStatus('تحديث متاح! جاري التنزيل...');
+          const fetchResult = await Updates.fetchUpdateAsync();
+          
+          if (fetchResult.isNew) {
+            setOtaStatus('تم التنزيل بنجاح. جاري التطبيق...');
+            await Updates.reloadAsync();
+          } else {
+            setOtaStatus('التحديث موجود بالفعل.');
+          }
+        } else {
+          setOtaStatus('لا يوجد تحديث متاح.');
+        }
+      } catch (e: any) {
+        setOtaStatus('فشل أثناء دورة التحديث');
+        setOtaError(e.message || String(e));
       }
     }
     applyOTAUpdateIfAvailable();
@@ -75,6 +95,23 @@ export default function RootLayout() {
           <TouchableOpacity onPress={() => router.push('/settings/activation')} style={{ marginTop: 5, backgroundColor: 'white', paddingHorizontal: 15, paddingVertical: 5, borderRadius: 5 }}>
             <Text style={{ color: '#F59E0B', fontWeight: 'bold' }}>تجديد مبكر</Text>
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* OTA Diagnostics Overlay */}
+      {showOtaLogs && (
+        <View style={{ backgroundColor: 'rgba(0,0,0,0.85)', padding: 15, paddingTop: 45, position: 'absolute', top: 0, left: 0, right: 0, zIndex: 9999 }}>
+          <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: 10 }}>
+            <Text style={{ color: '#FFD700', fontWeight: 'bold', fontSize: 16 }}>تشخيص التحديث الهوائي (OTA)</Text>
+            <TouchableOpacity onPress={() => setShowOtaLogs(false)}><Text style={{ color: 'white' }}>إغلاق</Text></TouchableOpacity>
+          </View>
+          <Text style={{ color: 'white', fontSize: 12, marginBottom: 2 }}>Channel: {Updates.channel || 'N/A'}</Text>
+          <Text style={{ color: 'white', fontSize: 12, marginBottom: 2 }}>Runtime Version: {Updates.runtimeVersion || 'N/A'}</Text>
+          <Text style={{ color: 'white', fontSize: 12, marginBottom: 2 }}>Update ID: {Updates.updateId || 'N/A'}</Text>
+          <Text style={{ color: 'white', fontSize: 12, marginBottom: 2 }}>Is Emergency: {Updates.isEmergencyLaunch ? 'Yes' : 'No'}</Text>
+          <View style={{ height: 1, backgroundColor: '#555', marginVertical: 5 }} />
+          <Text style={{ color: '#4CAF50', fontSize: 13, fontWeight: 'bold' }}>الحالة: {otaStatus}</Text>
+          {otaError ? <Text style={{ color: '#F44336', fontSize: 12, marginTop: 5 }}>الخطأ: {otaError}</Text> : null}
         </View>
       )}
 
