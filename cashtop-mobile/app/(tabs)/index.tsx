@@ -92,7 +92,6 @@ export default function DashboardScreen() {
         <View style={{ flex: 1, alignItems: 'flex-end' }}>
           <Text style={styles.greeting}>مرحباً، {user?.full_name} 👋</Text>
           <Text style={styles.headerSub}>لوحة التحكم (بيانات محلية)</Text>
-          <Text style={{ color: '#FFD700', fontWeight: 'bold', marginTop: 5, backgroundColor: 'rgba(0,0,0,0.5)', padding: 4, borderRadius: 4, fontSize: 10 }}>OTA TEST SUCCESS - Build 1</Text>
         </View>
       </View>
 
