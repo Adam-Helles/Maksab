@@ -67,7 +67,7 @@ def refresh_token_endpoint(payload: RefreshTokenRequest, db: Session = Depends(g
         data = decode_token(payload.refresh_token)
         if data.get("type") != "refresh":
             raise HTTPException(status_code=401, detail="توكن غير صالح")
-        user_id = int(data["sub"])
+        user_id = str(data["sub"])
         jti = data.get("jti")
         if not jti:
             raise HTTPException(status_code=401, detail="توكن غير صالح")

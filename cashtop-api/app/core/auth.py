@@ -32,7 +32,7 @@ def _get_current_user(
     except JWTError:
         raise credentials_exception
 
-    user = db.query(User).filter(User.id == int(user_id), User.is_active == True).first()
+    user = db.query(User).filter(User.id == str(user_id), User.is_active == True).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="المستخدم غير موجود أو غير نشط")
 
