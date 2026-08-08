@@ -138,7 +138,7 @@ class InvoiceResponse(BaseModel):
 
     customer_id: Optional[str]
     supplier_id: Optional[str]
-    created_by: int
+    created_by: str
 
     subtotal: float
     discount_percent: float

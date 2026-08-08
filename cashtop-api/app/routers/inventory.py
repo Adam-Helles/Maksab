@@ -28,7 +28,7 @@ router = APIRouter(prefix="/inventory", tags=["📦 المخزون المتقد�
 
 @router.get("/movements", response_model=List[StockMovementResponse], summary="سجل حركات المخزون")
 def list_movements(
-    product_id: Optional[int] = None,
+    product_id: Optional[str] = None,
     movement_type: Optional[MovementType] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
@@ -100,7 +100,7 @@ def create_manual_movement(
 
 @router.get("/batches", response_model=List[BatchResponse], summary="قائمة الدُفع")
 def list_batches(
-    product_id: Optional[int] = None,
+    product_id: Optional[str] = None,
     expiring_in_days: Optional[int] = None,
     active_only: bool = True,
     skip: int = 0,

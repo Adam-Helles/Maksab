@@ -48,6 +48,7 @@ class InvoiceItem(Base, TimestampMixin):
 
     invoice_id = Column(String(36), ForeignKey("invoices.id", ondelete="CASCADE"), nullable=False)
     product_id = Column(String(36), ForeignKey("products.id"), nullable=False)
+    product_name = Column(String(200), nullable=True)  # cached at sale time for offline display
 
     quantity = Column(Float, nullable=False)
     unit_type = Column(String(20), default="piece", nullable=False)
@@ -99,6 +100,7 @@ class Invoice(Base, TimestampMixin):
 
     # ─── الأطراف ───────────────────────────────────────────
     customer_id = Column(String(36), ForeignKey("customers.id"), nullable=True)
+    customer_name = Column(String(150), nullable=True)  # cached at sale time
     supplier_id = Column(String(36), ForeignKey("suppliers.id"), nullable=True)
     created_by = Column(String(36), ForeignKey("users.id"), nullable=False)
 

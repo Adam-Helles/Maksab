@@ -108,8 +108,8 @@ def create(
 def list_invoices(
     invoice_type: Optional[InvoiceType] = None,
     status: Optional[InvoiceStatus] = None,
-    customer_id: Optional[int] = None,
-    supplier_id: Optional[int] = None,
+    customer_id: Optional[str] = None,
+    supplier_id: Optional[str] = None,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     skip: int = Query(0, ge=0),

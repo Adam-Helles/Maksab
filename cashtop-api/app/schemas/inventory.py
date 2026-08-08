@@ -43,7 +43,7 @@ class StockMovementResponse(BaseModel):
     stock_before: float
     stock_after: float
     unit_cost: float
-    invoice_id: Optional[int]
+    invoice_id: Optional[str]
     user_id: str
     notes: Optional[str]
     reference: Optional[str]

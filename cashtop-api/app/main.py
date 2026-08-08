@@ -40,7 +40,8 @@ def seed_admin():
 
     db = SessionLocal()
     try:
-        store = db.query(Store).filter(Store.id == 1).first()
+        # Look up store by name, not by integer ID
+        store = db.query(Store).filter(Store.name == "المحل الافتراضي").first()
         if not store:
             store = Store(name="المحل الافتراضي", is_active=True)
             db.add(store)
@@ -56,7 +57,7 @@ def seed_admin():
                 password_hash=hash_password(settings.ADMIN_PASSWORD),
                 role=UserRole.ADMIN,
                 is_active=True,
-                store_id=store.id,   # ← جديد
+                store_id=store.id,
             )
             db.add(admin)
             db.commit()

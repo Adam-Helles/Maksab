@@ -45,8 +45,8 @@ def _qty_in_pieces(quantity: float, unit_type: str, pieces_per_carton: int) -> f
 def create_invoice(
     db: Session,
     data: InvoiceCreate,
-    user_id: int,
-    store_id: int,
+    user_id: str,
+    store_id: str,
     base_url: str = "http://localhost:8000",
 ) -> Invoice:
     """
@@ -123,8 +123,9 @@ def create_invoice(
         total_item = after_discount + tax_amount
 
         items_db.append(InvoiceItem(
-            store_id=store_id,   # ⚠️ جديد
+            store_id=store_id,
             product_id=product.id,
+            product_name=product.name,  # cache for offline display
             quantity=item_data.quantity,
             unit_type=item_data.unit_type,
             unit_price=unit_price,
@@ -166,13 +167,14 @@ def create_invoice(
 
     # ── إنشاء الفاتورة ───────────────────────────────────
     invoice = Invoice(
-        store_id=store_id,   # ⚠️ جديد
+        store_id=store_id,
         invoice_number=inv_number,
         invoice_type=data.invoice_type,
         status=status,
         payment_status=pay_status,
         payment_method=data.payment_method,
         customer_id=data.customer_id,
+        customer_name=customer.name if customer else None,  # cache for offline display
         supplier_id=data.supplier_id,
         created_by=user_id,
         subtotal=round(subtotal, 3),
@@ -214,7 +216,7 @@ def create_invoice(
 #  تأثير على المخزون والديون
 # ══════════════════════════════════════════════════════════
 
-def _apply_stock_and_debt(db: Session, invoice: Invoice, items: list, user_id: int):
+def _apply_stock_and_debt(db: Session, invoice: Invoice, items: list, user_id: str):
     """
     يطبّق خصم/إضافة المخزون وتحديث دين العميل/المورد.
 
@@ -294,7 +296,7 @@ def _apply_stock_and_debt(db: Session, invoice: Invoice, items: list, user_id: i
 #  إكمال فاتورة معلّقة (draft → completed)
 # ══════════════════════════════════════════════════════════
 
-def complete_draft_invoice(db: Session, invoice: Invoice, user_id: int, paid_amount: float = 0.0) -> Invoice:
+def complete_draft_invoice(db: Session, invoice: Invoice, user_id: str, paid_amount: float = 0.0) -> Invoice:
     """
     ملاحظة: invoice هون وصلت من الراوتر عبر _get_owned_invoice، يعني
     مضمون إنها تخص محل المستخدم قبل ما توصل هون. ما محتاجين store_id
@@ -393,7 +395,7 @@ def add_payment_to_invoice(
     invoice: Invoice,
     amount: float,
     method: PaymentMethod,
-    user_id: int,
+    user_id: str,
     notes: str = "",
 ) -> Payment:
     """invoice هون كمان وصلت مُتحقق منها مسبقاً عبر _get_owned_invoice بالراوتر."""

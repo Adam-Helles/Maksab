@@ -34,17 +34,17 @@ def _pieces(quantity: float, unit_type: str, pieces_per_carton: int) -> float:
 
 def move_stock(
     db: Session,
-    product_id: int,
+    product_id: str,
     movement_type: MovementType,
     quantity: float,
-    store_id: int,                  # ⚠️ جديد — إجباري، بلا default عشان ما ينسى حدا يمرره
+    store_id: str,
     unit_type: str = "piece",
-    user_id: int = 1,
-    invoice_id: Optional[int] = None,
+    user_id: str = "",
+    invoice_id: Optional[str] = None,
     notes: Optional[str] = None,
     reference: Optional[str] = None,
     unit_cost: float = 0.0,
-    batch_id: Optional[int] = None,
+    batch_id: Optional[str] = None,
 ) -> StockMovement:
     """
     الدالة الرئيسية — تنفّذ حركة مخزون وتسجّلها.
@@ -115,7 +115,7 @@ def _update_average_cost(product: Product, qty_new: float, cost_new: float):
         product.cost_price = round(total_cost / (old_qty + qty_new), 4)
 
 
-def _deduct_from_batch(db: Session, batch_id: int, qty: float, store_id: int):
+def _deduct_from_batch(db: Session, batch_id: str, qty: float, store_id: str):
     """خصم من دُفعة محددة — مفلترة بـ store_id (العمود صار موجود بـ ProductBatch)"""
     batch = db.query(ProductBatch).filter(
         ProductBatch.id == batch_id,
@@ -152,16 +152,16 @@ def _deduct_fefo(db: Session, product: Product, qty: float):
 
 def add_purchase_batch(
     db: Session,
-    product_id: int,
+    product_id: str,
     quantity: float,
-    store_id: int,                  # ⚠️ جديد
+    store_id: str,
     unit_type: str = "piece",
     cost_price: float = 0.0,
     expiry_date=None,
     batch_number: Optional[str] = None,
-    supplier_id: Optional[int] = None,
-    invoice_id: Optional[int] = None,
-    user_id: int = 1,
+    supplier_id: Optional[str] = None,
+    invoice_id: Optional[str] = None,
+    user_id: str = "",
     notes: Optional[str] = None,
 ) -> tuple[StockMovement, Optional[ProductBatch]]:
     """يضيف دُفعة شراء جديدة للمخزون."""
