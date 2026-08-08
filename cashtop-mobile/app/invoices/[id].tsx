@@ -5,7 +5,9 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, LoadingScreen, Badge } from '../../src/components/ui';
 import { Colors, Fonts, Spacing } from '../../src/types/theme';
-import { invoicesApi, reportsApi } from '../../src/api';
+import { reportsApi } from '../../src/api';
+import { getInvoiceWithItems } from '../../src/db/database';
+import { isBackendReachable } from '../../src/api/client';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system';
 import { format } from 'date-fns';
@@ -13,17 +15,32 @@ import { format } from 'date-fns';
 export default function InvoiceDetailsScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const invoiceId = Number(id);
+  const invoiceIdStr = Array.isArray(id) ? id[0] : id;
 
   const [invoice, setInvoice] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
-    async function load() {
+    function load() {
       try {
-        const inv = await invoicesApi.get(invoiceId);
-        setInvoice(inv);
+        const data = getInvoiceWithItems(invoiceIdStr);
+        if (!data) {
+          Alert.alert('خطأ', 'الفاتورة غير موجودة');
+          router.back();
+          return;
+        }
+        
+        // Map LocalInvoice to expected UI shape
+        const mappedInvoice = {
+          ...data.invoice,
+          items: data.items.map(item => ({
+            ...item,
+            discount_amount: 0 // LocalInvoiceItem doesn't have discount_amount
+          }))
+        };
+        
+        setInvoice(mappedInvoice);
       } catch (e) {
         Alert.alert('خطأ', 'فشل تحميل بيانات الفاتورة');
         router.back();
@@ -32,17 +49,25 @@ export default function InvoiceDetailsScreen() {
       }
     }
     load();
-  }, [invoiceId]);
+  }, [invoiceIdStr]);
 
   const handleExportPDF = async () => {
+    const isOnline = await isBackendReachable();
+    if (!isOnline) {
+      Alert.alert('يتطلب اتصال بالإنترنت', 'لا يمكن تصدير الفاتورة كـ PDF إلا عند توفر اتصال بالإنترنت.');
+      return;
+    }
+    
     setGeneratingPdf(true);
     try {
-      const response = await reportsApi.exportInvoicePdf(invoiceId);
-      
-      const fileUri = `${FileSystem.documentDirectory}invoice_${invoiceId}.pdf`;
-      const base64Data = response.split(',')[1] || response; // تأكد أن الـ base64 صحيح
+      // NOTE: server requires numeric ID or UUID? If server uses numeric IDs in old API, this might fail for local-only invoices.
+      // We wrap in try-catch.
+      const response = await reportsApi.exportInvoicePdf(invoiceIdStr as any);
+      const responseStr = typeof response === 'string' ? response : JSON.stringify(response);
+      const fileUri = `${(FileSystem as any).documentDirectory ?? ''}invoice_${invoiceIdStr}.pdf`;
+      const base64Data = responseStr.split(',')[1] || responseStr;
       await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: (FileSystem as any).EncodingType?.Base64 ?? 'base64',
       });
 
       if (await Sharing.isAvailableAsync()) {
@@ -83,30 +108,30 @@ export default function InvoiceDetailsScreen() {
         
         <Card style={{ marginBottom: Spacing.md }}>
           <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: Spacing.sm }}>
-            <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.gray700 }}>النوع:</Text>
+            <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '700', color: Colors.gray700 }}>النوع:</Text>
             <Badge label={isSale ? "مبيعات" : "مشتريات"} color={isSale ? "green" : "blue"} />
           </View>
           <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: Spacing.sm }}>
-            <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.gray700 }}>التاريخ:</Text>
-            <Text style={{ fontSize: Fonts.sizes.md, color: Colors.gray800 }}>
+            <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '700', color: Colors.gray700 }}>التاريخ:</Text>
+            <Text style={{ fontSize: Fonts.sizes.base, color: Colors.gray800 }}>
               {format(new Date(invoice.created_at), 'yyyy-MM-dd HH:mm')}
             </Text>
           </View>
           <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: Spacing.sm }}>
-            <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.gray700 }}>الحالة:</Text>
-            <Text style={{ fontSize: Fonts.sizes.md, color: Colors.gray800 }}>
+            <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '700', color: Colors.gray700 }}>الحالة:</Text>
+            <Text style={{ fontSize: Fonts.sizes.base, color: Colors.gray800 }}>
               {invoice.status === 'completed' ? 'مكتملة ✅' : invoice.status === 'cancelled' ? 'ملغاة ❌' : 'مسودة'}
             </Text>
           </View>
           <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between' }}>
-            <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.gray700 }}>حالة الدفع:</Text>
-            <Text style={{ fontSize: Fonts.sizes.md, color: Colors.gray800 }}>
+            <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '700', color: Colors.gray700 }}>حالة الدفع:</Text>
+            <Text style={{ fontSize: Fonts.sizes.base, color: Colors.gray800 }}>
               {invoice.payment_status === 'paid' ? 'مدفوعة بالكامل' : invoice.payment_status === 'partial' ? 'مدفوعة جزئياً' : 'غير مدفوعة'}
             </Text>
           </View>
         </Card>
 
-        <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '800', color: Colors.gray800, textAlign: 'right', marginBottom: Spacing.sm }}>
+        <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '800', color: Colors.gray800, textAlign: 'right', marginBottom: Spacing.sm }}>
           المنتجات ({invoice.items.length})
         </Text>
         
@@ -140,8 +165,8 @@ export default function InvoiceDetailsScreen() {
           )}
           <View style={{ borderBottomWidth: 1, borderBottomColor: Colors.border, marginVertical: Spacing.sm }} />
           <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: Spacing.sm }}>
-            <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '800', color: Colors.gray800 }}>الإجمالي النهائي:</Text>
-            <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '800', color: Colors.primary }}>{invoice.total.toFixed(2)} ₪</Text>
+            <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '800', color: Colors.gray800 }}>الإجمالي النهائي:</Text>
+            <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '800', color: Colors.primary }}>{invoice.total.toFixed(2)} ₪</Text>
           </View>
           <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: Spacing.sm }}>
             <Text style={{ color: Colors.success, fontWeight: '700' }}>المدفوع:</Text>

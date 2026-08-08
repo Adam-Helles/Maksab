@@ -5,24 +5,27 @@ import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Input, Badge, Button, EmptyState } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
-import type { Supplier } from '../../src/types';
 import {
-  searchSuppliersCache,
-  recordSupplierPaymentLocal,
-  runSupplierSync,
-} from '../../src/db/supplierSync';
+  getAllSuppliers,
+  updateSupplierBalance,
+} from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
 
 export default function SuppliersScreen() {
   const router = useRouter();
   const [suppliers, setSuppliers] = useState<any[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
-  const [payingId, setPayingId] = useState<number | null>(null);
+  const [payingId, setPayingId] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const loadLocal = useCallback(() => {
-    const data = searchSuppliersCache(search.trim());
+    let data = getAllSuppliers();
+    const query = search.trim().toLowerCase();
+    if (query) {
+      data = data.filter(s => s.name.toLowerCase().includes(query));
+    }
     setSuppliers(data);
   }, [search]);
 
@@ -34,7 +37,7 @@ export default function SuppliersScreen() {
   // Trigger sync in background
   useEffect(() => {
     const t = setTimeout(() => {
-      runSupplierSync().then(loadLocal).catch(() => {});
+      runFullSync().then(loadLocal).catch(() => {});
     }, 500);
     return () => clearTimeout(t);
   }, []);
@@ -44,7 +47,7 @@ export default function SuppliersScreen() {
     loadLocal();
   }, [search]);
 
-  const submitPayment = (supplierId: number) => {
+  const submitPayment = (supplierId: string) => {
     const amount = Number(payAmount);
     if (!amount || amount <= 0) {
       Alert.alert('أدخل مبلغاً صحيحاً');
@@ -52,11 +55,13 @@ export default function SuppliersScreen() {
     }
     setSubmitting(true);
     try {
-      recordSupplierPaymentLocal(supplierId, amount, 'cash');
+      // Payment reduces the balance
+      updateSupplierBalance(supplierId, -amount);
       setPayingId(null);
       setPayAmount('');
       loadLocal();
       Alert.alert('تم تسجيل الدفعة ✅', 'ستتم المزامنة مع السيرفر تلقائياً عند توفر الإنترنت');
+      runFullSync().catch(() => {});
     } catch (e: any) {
       Alert.alert('خطأ', 'تعذّر تسجيل الدفعة');
     } finally {
@@ -90,10 +95,11 @@ export default function SuppliersScreen() {
       ) : (
         <FlatList
           data={suppliers}
-          keyExtractor={s => s.local_id ?? String(s.id)}
+          keyExtractor={s => s.id}
           contentContainerStyle={{ padding: Spacing.lg, paddingBottom: 100, gap: Spacing.sm }}
           renderItem={({ item }) => {
-            const isPending = !!item.isPending;
+            const isPending = item.sync_status === 'pending_create';
+            const balance = item.current_balance;
             return (
               <TouchableOpacity
                 style={{ backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.md, ...Shadow.sm }}
@@ -116,19 +122,19 @@ export default function SuppliersScreen() {
                     )}
                   </View>
                   {!isPending && (
-                    item.balance > 0 ? (
-                      <Badge label={`مستحق: ${item.balance.toFixed(0)} ₪`} color="red" />
+                    balance > 0 ? (
+                      <Badge label={`مستحق: ${balance.toFixed(0)} ₪`} color="red" />
                     ) : (
                       <Badge label="لا يوجد مستحقات" color="green" />
                     )
                   )}
                 </View>
 
-                {!isPending && item.balance > 0 && (
+                {!isPending && balance > 0 && (
                   payingId === item.id ? (
                     <View style={{ marginTop: Spacing.sm }}>
                       <Input
-                        placeholder={`المبلغ (المستحق: ${item.balance.toFixed(2)} ₪)`}
+                        placeholder={`المبلغ (المستحق: ${balance.toFixed(2)} ₪)`}
                         value={payAmount}
                         onChangeText={setPayAmount}
                         keyboardType="decimal-pad"

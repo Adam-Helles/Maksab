@@ -8,9 +8,28 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
-import { productsApi } from '../../src/api';
+import { getProductByBarcode, LocalProduct } from '../../src/db/database';
 import { useCartStore } from '../../src/store/cartStore';
-import { searchProductsCache, localProductToProduct } from '../../src/db/productsCache';
+
+function localToProduct(p: LocalProduct) {
+  return {
+    id: p.id, name: p.name, name_ar: p.name_ar || undefined,
+    barcode_piece: p.barcode_piece || undefined, barcode_carton: p.barcode_carton || undefined,
+    base_unit: 'piece' as const, pieces_per_carton: p.pieces_per_carton,
+    cost_price: p.cost_price, retail_price: p.retail_price,
+    wholesale_price: p.retail_price, carton_price: p.carton_price,
+    piece_price_from_carton: p.pieces_per_carton > 0 ? p.carton_price / p.pieces_per_carton : 0,
+    stock_quantity: p.stock_quantity,
+    stock_in_cartons: p.pieces_per_carton > 0 ? p.stock_quantity / p.pieces_per_carton : 0,
+    min_stock_alert: 5, is_low_stock: p.stock_quantity <= 5,
+    profit_margin: p.cost_price > 0 ? ((p.retail_price - p.cost_price) / p.cost_price) * 100 : 0,
+    has_expiry: false, tax_rate: p.tax_rate,
+    is_active: p.is_active === 1, category_id: p.category_id || undefined,
+    supplier_id: p.supplier_id || undefined,
+    is_featured: false,
+    created_at: p.created_at,
+  };
+}
 
 const SCAN_COOLDOWN_MS = 1200;
 
@@ -51,11 +70,11 @@ export default function ScanScreen() {
   // ── وضع POS: إضافة للسلة من الكاش المحلي ───────────────
   const addToCartFromCache = useCallback((code: string) => {
     // ابحث في الكاش المحلي أولاً (يعمل أونلاين وأوفلاين)
-    const cached = searchProductsCache(code, 1);
-    const local  = cached[0];
+    // ابحث في قاعدة البيانات المحلية
+    const local = getProductByBarcode(code);
 
     if (local && local.is_active) {
-      const product = localProductToProduct(local);
+      const product = localToProduct(local);
       addItem(product, 'piece');
       Vibration.vibrate(60);
 
@@ -84,8 +103,8 @@ export default function ScanScreen() {
     setScanning(false);
     try {
       // أولاً: ابحث في الكاش المحلي (يعمل أونلاين وأوفلاين)
-      const cached = searchProductsCache(code, 1);
-      const local = cached[0];
+      // ابحث في قاعدة البيانات المحلية
+      const local = getProductByBarcode(code);
 
       if (local) {
         Vibration.vibrate(80);
@@ -93,15 +112,7 @@ export default function ScanScreen() {
         return;
       }
 
-      // ثانياً: إذا ما وجد محلياً — جرب السيرفر (إن وُجد إنترنت)
-      const result: any = await productsApi.getByBarcode(code);
-      const product = result?.product ?? result;
-      if (product?.id) {
-        Vibration.vibrate(80);
-        router.push({ pathname: '/product/[id]', params: { id: String(product.id) } });
-      } else {
-        handleNotFound(code);
-      }
+      handleNotFound(code);
     } catch {
       handleNotFound(code);
     } finally {

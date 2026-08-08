@@ -5,10 +5,30 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Badge, LoadingScreen } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
-import { productsApi } from '../../src/api';
-import type { Product } from '../../src/types';
-import { getProductCache, localProductToProduct, updateProductLocal, runProductSync } from '../../src/db/productsCache';
+import { getProductById, upsertProduct, updateProductStock, LocalProduct } from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
 import { isBackendReachable } from '../../src/api/client';
+import type { Product } from '../../src/types';
+
+function localToProduct(p: LocalProduct): Product {
+  return {
+    id: p.id, name: p.name, name_ar: p.name_ar || undefined,
+    barcode_piece: p.barcode_piece || undefined, barcode_carton: p.barcode_carton || undefined,
+    base_unit: 'piece' as const, pieces_per_carton: p.pieces_per_carton,
+    cost_price: p.cost_price, retail_price: p.retail_price,
+    wholesale_price: p.retail_price, carton_price: p.carton_price,
+    piece_price_from_carton: p.pieces_per_carton > 0 ? p.carton_price / p.pieces_per_carton : 0,
+    stock_quantity: p.stock_quantity,
+    stock_in_cartons: p.pieces_per_carton > 0 ? p.stock_quantity / p.pieces_per_carton : 0,
+    min_stock_alert: 5, is_low_stock: p.stock_quantity <= 5,
+    profit_margin: p.cost_price > 0 ? ((p.retail_price - p.cost_price) / p.cost_price) * 100 : 0,
+    has_expiry: false, tax_rate: p.tax_rate,
+    is_active: p.is_active === 1, category_id: p.category_id || undefined,
+    supplier_id: p.supplier_id || undefined,
+    is_featured: false,
+    created_at: p.created_at,
+  };
+}
 
 export default function ProductDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -21,12 +41,9 @@ export default function ProductDetailsScreen() {
 
   const load = useCallback(async () => {
     try {
-      const local = getProductCache(productId);
+      const local = getProductById(id);
       if (local) {
-        setProduct(localProductToProduct(local));
-      } else if (productId > 0) { // Not pending, fallback to API if possible
-        const data = await productsApi.get(productId);
-        setProduct(data);
+        setProduct(localToProduct(local));
       } else {
         throw new Error('Product not found');
       }
@@ -44,12 +61,10 @@ export default function ProductDetailsScreen() {
     if (!product) return;
     setAdjusting(true);
     try {
+      updateProductStock(id, change);
+      
       const isOnline = await isBackendReachable();
-      if (product.id > 0 && isOnline) {
-        await productsApi.adjustStock(product.id, change, change > 0 ? 'تعديل يدوي - إضافة' : 'تعديل يدوي - خصم');
-      }
-      updateProductLocal(product.id, { stock_quantity: product.stock_quantity + change });
-      if (isOnline) { runProductSync().catch(() => {}); }
+      if (isOnline) { runFullSync().catch(() => {}); }
       await load();
     } catch (e: any) {
       Alert.alert('خطأ', e?.response?.data?.detail || 'تعذّر تعديل المخزون');
@@ -69,9 +84,16 @@ export default function ProductDetailsScreen() {
           text: 'تأكيد', style: 'destructive',
           onPress: async () => {
             try {
+              const local = getProductById(id);
+              if (local) {
+                upsertProduct({
+                  ...local,
+                  is_active: local.is_active === 1 ? 0 : 1,
+                  sync_status: 'pending_update'
+                });
+              }
               const isOnline = await isBackendReachable();
-              updateProductLocal(product.id, { is_active: product.is_active ? 0 : 1 });
-              if (isOnline) { runProductSync().catch(() => {}); }
+              if (isOnline) { runFullSync().catch(() => {}); }
               await load();
             } catch {
               Alert.alert('خطأ', 'تعذّر تنفيذ العملية');
@@ -147,7 +169,7 @@ export default function ProductDetailsScreen() {
           </View>
           <Button 
             title="سجل الحركات" 
-            variant="outline" 
+            variant="ghost" 
             fullWidth 
             style={{ marginTop: Spacing.md }} 
             onPress={() => router.push(`/product/history/${product.id}`)} 

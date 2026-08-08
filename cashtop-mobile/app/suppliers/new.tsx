@@ -5,7 +5,9 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Input, Button } from '../../src/components/ui';
 import { Colors, Fonts, Spacing } from '../../src/types/theme';
-import { recordNewSupplierLocal } from '../../src/db/supplierSync';
+import { upsertSupplier } from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
+import * as Crypto from 'expo-crypto';
 
 export default function NewSupplierScreen() {
   const router = useRouter();
@@ -25,12 +27,15 @@ export default function NewSupplierScreen() {
     setNameError('');
     setSaving(true);
     try {
-      recordNewSupplierLocal({
+      const newId = Crypto.randomUUID();
+      upsertSupplier({
+        id: newId,
         name: name.trim(),
-        company: company.trim() || undefined,
         phone: phone.trim() || undefined,
-        email: email.trim() || undefined,
+        // Using notes to store company/email info for now since schema has no dedicated fields
+        notes: `الشركة: ${company.trim() || 'لا يوجد'} | الإيميل: ${email.trim() || 'لا يوجد'}`
       });
+      runFullSync().catch(() => {});
       router.replace('/suppliers');
     } catch (err: any) {
       Alert.alert('خطأ', 'حدث خطأ أثناء الحفظ');

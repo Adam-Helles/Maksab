@@ -52,7 +52,7 @@ export default function InvoicesScreen() {
       return;
     }
     try {
-      await reportsApi.exportInvoicePdf(invId);
+      await reportsApi.exportInvoicePdf(invId as any);
     } catch (e: any) {
       Alert.alert('خطأ', e.message || 'فشل التصدير');
     }
@@ -92,7 +92,7 @@ export default function InvoicesScreen() {
             }}>
               <View style={{ flex: 1 }}>
                 <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 6 }}>
-                  <Text style={{ fontSize: Fonts.sizes.md, fontWeight: 'bold', color: Colors.gray800, textAlign: 'right' }}>
+                  <Text style={{ fontSize: Fonts.sizes.base, fontWeight: 'bold', color: Colors.gray800, textAlign: 'right' }}>
                     {inv.invoice_number || 'معلّقة'}
                   </Text>
                   {inv.sync_status !== 'synced' && (

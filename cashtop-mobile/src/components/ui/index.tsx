@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   TouchableOpacity, Text, ActivityIndicator,
-  StyleSheet, ViewStyle, TextStyle, View,
+  StyleSheet, ViewStyle, TextStyle, View, StyleProp,
   TextInput, TextInputProps,
 } from 'react-native';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../types/theme';
@@ -145,7 +145,7 @@ export const Input: React.FC<InputProps> = ({
 
 interface CardProps {
   children: React.ReactNode;
-  style?: ViewStyle;
+  style?: StyleProp<ViewStyle>;
   padding?: number;
 }
 

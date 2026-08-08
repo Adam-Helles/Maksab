@@ -12,7 +12,7 @@ import { isBackendReachable } from '../../src/api/client';
 import { useCartStore } from '../../src/store/cartStore';
 import type { Product, Customer, PaymentMethod } from '../../src/types';
 import {
-  searchProducts, localProductToProduct, getAllProducts,
+  searchProducts, getAllProducts,
   createLocalInvoice, updateCustomerDebt, updateProductStock,
   LocalProduct, runInTransaction
 } from '../../src/db/database';

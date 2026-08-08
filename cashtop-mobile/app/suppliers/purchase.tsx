@@ -4,12 +4,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input, Card, LoadingScreen } from '../../src/components/ui';
-import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
-import { suppliersApi, productsApi, invoicesApi } from '../../src/api';
-import { searchSuppliersCache, localSupplierToSupplier } from '../../src/db/supplierSync';
-import { searchProductsCache, localProductToProduct } from '../../src/db/productsCache';
-import { recordOfflinePurchaseLocal } from '../../src/db/offlinePurchases';
-import { isBackendReachable } from '../../src/api/client';
+import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
+import {
+  getAllSuppliers,
+  getAllProducts,
+  createLocalInvoice,
+  updateProductStock,
+  updateSupplierBalance
+} from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
 import type { Supplier, Product } from '../../src/types';
 
 export default function PurchaseInvoiceScreen() {
@@ -18,8 +21,8 @@ export default function PurchaseInvoiceScreen() {
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [selectedSupplier, setSelectedSupplier] = useState<any | null>(null);
   
   const [showSupplierModal, setShowSupplierModal] = useState(!supplierId);
   
@@ -40,17 +43,30 @@ export default function PurchaseInvoiceScreen() {
   useEffect(() => {
     async function loadData() {
       try {
-        // تحميل من الكاش المحلي أولاً — فوري، بدون إنترنت
-        const localSups = searchSuppliersCache('', 200)
-          .filter((s): s is Supplier => !('isPending' in s && s.isPending))
-          .map(s => localSupplierToSupplier(s as any));
+        const localSups = getAllSuppliers();
         setSuppliers(localSups);
 
-        const localProds = searchProductsCache('', 500).map(localProductToProduct);
+        const localProds = getAllProducts(true).map(p => ({
+          id: p.id, name: p.name, name_ar: p.name_ar || undefined,
+          barcode_piece: p.barcode_piece || undefined, barcode_carton: p.barcode_carton || undefined,
+          base_unit: 'piece' as const, pieces_per_carton: p.pieces_per_carton,
+          cost_price: p.cost_price, retail_price: p.retail_price,
+          wholesale_price: p.retail_price, carton_price: p.carton_price,
+          piece_price_from_carton: p.pieces_per_carton > 0 ? p.carton_price / p.pieces_per_carton : 0,
+          stock_quantity: p.stock_quantity,
+          stock_in_cartons: p.pieces_per_carton > 0 ? p.stock_quantity / p.pieces_per_carton : 0,
+          min_stock_alert: 5, is_low_stock: p.stock_quantity <= 5,
+          profit_margin: p.cost_price > 0 ? ((p.retail_price - p.cost_price) / p.cost_price) * 100 : 0,
+          has_expiry: false, tax_rate: p.tax_rate,
+          is_active: p.is_active === 1, category_id: p.category_id || undefined,
+          supplier_id: p.supplier_id || undefined,
+          is_featured: false,
+          created_at: p.created_at,
+        }));
         setProducts(localProds);
 
         if (supplierId) {
-          const s = localSups.find(x => x.id === Number(supplierId));
+          const s = localSups.find(x => x.id === supplierId);
           if (s) setSelectedSupplier(s);
         }
       } catch (e) {
@@ -70,7 +86,8 @@ export default function PurchaseInvoiceScreen() {
     const q = searchQuery.toLowerCase();
     const res = products.filter(p => 
       p.name.toLowerCase().includes(q) || 
-      (p.barcode && p.barcode.includes(q))
+      (p.barcode_piece && p.barcode_piece.includes(q)) ||
+      (p.barcode_carton && p.barcode_carton.includes(q))
     ).slice(0, 10);
     setSearchResults(res);
   }, [searchQuery, products]);
@@ -85,13 +102,13 @@ export default function PurchaseInvoiceScreen() {
     setSearchQuery('');
   };
 
-  const updateCart = (productId: number, field: 'quantity' | 'cost_price', value: string) => {
+  const updateCart = (productId: string, field: 'quantity' | 'cost_price', value: string) => {
     const num = Number(value);
     if (isNaN(num)) return;
     setCart(cart.map(x => x.product.id === productId ? { ...x, [field]: num } : x));
   };
 
-  const removeFromCart = (productId: number) => {
+  const removeFromCart = (productId: string) => {
     setCart(cart.filter(x => x.product.id !== productId));
   };
 
@@ -99,7 +116,7 @@ export default function PurchaseInvoiceScreen() {
     return cart.reduce((sum, item) => sum + (item.quantity * item.cost_price), 0);
   }, [cart]);
 
-  const total = subtotal; // يمكن إضافة ضريبة أو خصم لاحقاً
+  const total = subtotal; 
   const remaining = total - (Number(paidAmount) || 0);
 
   const handleSubmit = async () => {
@@ -114,42 +131,47 @@ export default function PurchaseInvoiceScreen() {
 
     setSubmitting(true);
     try {
-      const online = await isBackendReachable();
-      
-      if (!online) {
-        // الحفظ المحلي أوفلاين
-        recordOfflinePurchaseLocal(
-          selectedSupplier.id,
-          selectedSupplier.name,
-          cart.map(item => ({
-            product_id: item.product.id,
-            quantity: item.quantity,
-            unit_type: 'piece',
-            unit_price: item.cost_price,
-            pieces_per_carton: item.product.pieces_per_carton,
-          })),
-          total,
-          'cash'
-        );
-        Alert.alert('تم الحفظ محلياً', 'سيتم رفع الفاتورة عند توفر الإنترنت.', [
-          { text: 'موافق', onPress: () => router.back() }
-        ]);
-        return;
+      const itemsData = cart.map(item => ({
+        product_id: item.product.id,
+        product_name: item.product.name,
+        quantity: item.quantity,
+        unit_type: 'piece',
+        unit_price: item.cost_price,
+        cost_price: item.cost_price,
+        pieces_per_carton: item.product.pieces_per_carton,
+        total: item.quantity * item.cost_price
+      }));
+
+      createLocalInvoice({
+        invoice_number: null,
+        invoice_type: 'purchase',
+        status: 'completed',
+        payment_method: 'cash',
+        payment_status: remaining > 0 ? 'partial' : 'paid',
+        customer_id: null,
+        customer_name: null,
+        supplier_id: selectedSupplier.id,
+        subtotal: total,
+        discount_amount: 0,
+        tax_amount: 0,
+        total: total,
+        paid_amount: Number(paidAmount) || 0,
+        remaining_amount: remaining > 0 ? remaining : 0,
+        notes: notes || null,
+      }, itemsData);
+
+      // زيادة المخزون بناءً على فاتورة المشتريات
+      for (const item of cart) {
+        updateProductStock(item.product.id, item.quantity);
       }
 
-      await invoicesApi.create({
-        invoice_type: 'purchase',
-        supplier_id: selectedSupplier.id,
-        payment_method: 'cash',
-        paid_amount: Number(paidAmount) || 0,
-        notes: notes,
-        items: cart.map(item => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          unit_type: 'piece',
-          unit_price: item.cost_price, // نرسل سعر التكلفة الجديد كسعر للوحدة في فاتورة الشراء
-        }))
-      });
+      // زيادة رصيد المورد (الدين) إذا كان هناك متبقي
+      if (remaining > 0) {
+        updateSupplierBalance(selectedSupplier.id, remaining);
+      }
+
+      runFullSync().catch(() => {});
+
       Alert.alert('نجاح', 'تم حفظ فاتورة المشتريات بنجاح', [
         { text: 'موافق', onPress: () => router.back() }
       ]);
@@ -188,7 +210,7 @@ export default function PurchaseInvoiceScreen() {
         >
           <View style={{ flexDirection: 'row-reverse', alignItems: 'center', gap: 10 }}>
             <Ionicons name="business" size={24} color={Colors.primary} />
-            <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '700', color: selectedSupplier ? Colors.gray800 : Colors.gray400 }}>
+            <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '700', color: selectedSupplier ? Colors.gray800 : Colors.gray400 }}>
               {selectedSupplier ? selectedSupplier.name : 'اختر المورد...'}
             </Text>
           </View>
@@ -219,7 +241,7 @@ export default function PurchaseInvoiceScreen() {
         </View>
 
         {/* السلة */}
-        <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '800', color: Colors.gray800, textAlign: 'right', marginBottom: Spacing.sm }}>
+        <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '800', color: Colors.gray800, textAlign: 'right', marginBottom: Spacing.sm }}>
           المنتجات ({cart.length})
         </Text>
         {cart.map((item, index) => (
@@ -258,8 +280,8 @@ export default function PurchaseInvoiceScreen() {
           <>
             <Card style={{ marginVertical: Spacing.lg, backgroundColor: '#F8FAFC' }}>
               <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: Spacing.sm }}>
-                <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.gray600 }}>إجمالي الفاتورة:</Text>
-                <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '800', color: Colors.gray800 }}>{total.toFixed(2)} ₪</Text>
+                <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '700', color: Colors.gray600 }}>إجمالي الفاتورة:</Text>
+                <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '800', color: Colors.gray800 }}>{total.toFixed(2)} ₪</Text>
               </View>
               <View style={{ borderBottomWidth: 1, borderBottomColor: Colors.border, marginVertical: Spacing.sm }} />
               <Input 
@@ -270,8 +292,8 @@ export default function PurchaseInvoiceScreen() {
                 placeholder="0.00"
               />
               <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', marginTop: Spacing.sm }}>
-                <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.danger }}>الباقي دين علينا:</Text>
-                <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '800', color: Colors.danger }}>{remaining.toFixed(2)} ₪</Text>
+                <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '700', color: Colors.danger }}>الباقي دين علينا:</Text>
+                <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '800', color: Colors.danger }}>{remaining.toFixed(2)} ₪</Text>
               </View>
             </Card>
 
@@ -319,8 +341,8 @@ export default function PurchaseInvoiceScreen() {
                   style={{ padding: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border }}
                   onPress={() => { setSelectedSupplier(item); setShowSupplierModal(false); }}
                 >
-                  <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.gray800, textAlign: 'right' }}>{item.name}</Text>
-                  {!!item.company && <Text style={{ color: Colors.gray500, textAlign: 'right' }}>{item.company}</Text>}
+                  <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '700', color: Colors.gray800, textAlign: 'right' }}>{item.name}</Text>
+                  {!!item.notes && <Text style={{ color: Colors.gray500, textAlign: 'right' }}>{item.notes}</Text>}
                 </TouchableOpacity>
               )}
               ListEmptyComponent={<Text style={{ textAlign: 'center', marginTop: 20, color: Colors.gray400 }}>لا يوجد موردين</Text>}

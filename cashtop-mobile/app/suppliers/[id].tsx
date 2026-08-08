@@ -5,23 +5,18 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Badge, Input, LoadingScreen } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
-import type { Supplier } from '../../src/types';
 import {
-  getSupplierCache,
-  recordSupplierPaymentLocal,
-  getPendingSupplierPayments,
-  getPendingSupplierDebts,
-  runSupplierSync,
-  localSupplierToSupplier,
-} from '../../src/db/supplierSync';
-import { suppliersApi } from '../../src/api';
+  getSupplierById,
+  getInvoicesForSupplier,
+  updateSupplierBalance
+} from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
 
 export default function SupplierStatementScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const supplierId = Number(id);
 
-  const [supplier, setSupplier] = useState<Supplier | null>(null);
+  const [supplier, setSupplier] = useState<any>(null);
   const [statement, setStatement] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
@@ -29,26 +24,30 @@ export default function SupplierStatementScreen() {
   const [payAmount, setPayAmount] = useState('');
   const [paying, setPaying] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     // 1. Load from local cache immediately (offline-first)
-    const cached = getSupplierCache(supplierId);
+    const cached = getSupplierById(id);
     if (cached) {
-      setSupplier(localSupplierToSupplier(cached));
+      setSupplier(cached);
     }
 
-    // 2. Try to get statement from server (non-blocking)
-    try {
-      const st = await suppliersApi.statement(supplierId);
-      setStatement(st);
-      // Also refresh supplier data from server if available
-      const sup = await suppliersApi.get(supplierId);
-      setSupplier(sup);
-    } catch {
-      // Ignore - server unavailable, use local cache
-    } finally {
-      setLoading(false);
-    }
-  }, [supplierId]);
+    // 2. Load invoices for statement
+    const invoices = getInvoicesForSupplier(id);
+    const txns = invoices.map(inv => ({
+      type: inv.invoice_type === 'purchase' ? `فاتورة مشتريات #${inv.invoice_number || inv.id.substring(0,6)}` : `حركة #${inv.id.substring(0,6)}`,
+      credit: inv.invoice_type === 'purchase' ? inv.total : 0,
+      debit: inv.paid_amount || 0,
+      balance: null,
+      date: inv.created_at.substring(0, 10),
+      isPending: inv.sync_status !== 'synced'
+    }));
+
+    setStatement({
+      transactions: txns,
+      current_debt: cached?.current_balance || 0
+    });
+    setLoading(false);
+  }, [id]);
 
   useFocusEffect(useCallback(() => {
     setLoading(true);
@@ -63,15 +62,14 @@ export default function SupplierStatementScreen() {
     }
     setPaying(true);
     try {
-      recordSupplierPaymentLocal(supplierId, amount, 'cash');
+      updateSupplierBalance(id, -amount);
       setShowPay(false);
       setPayAmount('');
       // Refresh local display
-      const cached = getSupplierCache(supplierId);
-      if (cached) setSupplier(localSupplierToSupplier(cached));
+      load();
       Alert.alert('تم ✅', 'تم تسجيل الدفعة. ستتم المزامنة مع السيرفر تلقائياً.');
       // Trigger sync in background
-      runSupplierSync().catch(() => {});
+      runFullSync().catch(() => {});
     } catch (e: any) {
       Alert.alert('خطأ', 'فشلت العملية');
     } finally {
@@ -82,32 +80,8 @@ export default function SupplierStatementScreen() {
   if (loading && !supplier) return <LoadingScreen message="جاري تحميل كشف الحساب..." />;
   if (!supplier) return <LoadingScreen message="جاري التحميل..." />;
 
-  // Merge local pending with server transactions
-  const serverTransactions: any[] = statement?.transactions || [];
-  const pendingPayments = getPendingSupplierPayments(supplierId);
-  const pendingDebts = getPendingSupplierDebts(supplierId);
-
-  const pendingTxn = [
-    ...pendingPayments.map(p => ({
-      type: 'دفعة (لم تُزامن بعد) ⏳',
-      credit: p.amount,
-      debit: 0,
-      balance: null,
-      date: p.client_created_at.substring(0, 10),
-      isPending: true,
-    })),
-    ...pendingDebts.map(d => ({
-      type: `دين مسجل (لم يُزامن بعد) ⏳${d.notes ? ' - ' + d.notes : ''}`,
-      credit: 0,
-      debit: d.amount,
-      balance: null,
-      date: d.client_created_at.substring(0, 10),
-      isPending: true,
-    })),
-  ];
-
-  const transactions = [...pendingTxn, ...serverTransactions];
-  const currentDebt = statement?.current_debt ?? supplier.balance;
+  const transactions: any[] = statement?.transactions || [];
+  const currentDebt = supplier.current_balance;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }}>

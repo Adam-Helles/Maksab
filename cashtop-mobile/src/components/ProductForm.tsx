@@ -5,7 +5,7 @@ import { Button, Input, Card } from './ui';
 import { Colors, Fonts, Spacing, Radius } from '../types/theme';
 import { categoriesApi } from '../api';
 import type { Product, Category, UnitType } from '../types';
-import { searchCategoriesCache } from '../db/categorySync';
+import { getAllCategories } from '../db/database';
 
 const UNIT_OPTIONS: { value: UnitType; label: string }[] = [
   { value: 'piece',  label: 'قطعة'  },
@@ -26,7 +26,7 @@ export interface ProductFormValues {
   retail_price: string;
   wholesale_price: string;
   carton_price: string;
-  category_id?: number;
+  category_id?: string;
   min_stock_alert: string;
   tax_rate: string;
   has_expiry: boolean;
@@ -98,7 +98,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
   useEffect(() => {
     // Load categories from local cache instead of API
     try {
-      const localCats = searchCategoriesCache();
+      const localCats = getAllCategories() as any[];
       setCategories(localCats);
     } catch (e) {
       // Fallback or ignore
@@ -173,7 +173,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({
           <ChipRow
             options={categories.map(c => ({ value: c.id, label: c.name_ar || c.name }))}
             selected={values.category_id}
-            onSelect={v => set('category_id', v as number)}
+            onSelect={v => set('category_id', v as string)}
             allowClear
           />
         )}

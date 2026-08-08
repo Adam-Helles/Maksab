@@ -19,7 +19,7 @@ export const usersApi = {
     return data;
   },
 
-  update: async (id: number, payload: Partial<{
+  update: async (id: string, payload: Partial<{
     full_name: string;
     email: string;
     phone: string;

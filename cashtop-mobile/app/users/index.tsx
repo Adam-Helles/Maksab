@@ -9,6 +9,8 @@ import { usersApi } from '../../src/api/users';
 import { useIsAdmin } from '../../src/store/authStore';
 import type { User, UserRole } from '../../src/types';
 
+import { isBackendReachable } from '../../src/api/client';
+
 const ROLE_LABELS: Record<UserRole, string> = { admin: 'مدير النظام', manager: 'مدير', cashier: 'كاشير' };
 const ROLE_OPTIONS: UserRole[] = ['admin', 'manager', 'cashier'];
 
@@ -20,9 +22,16 @@ export default function UsersScreen() {
   const [showCreate, setShowCreate] = useState(false);
 
   const load = () => {
-    usersApi.list().then(setUsers).catch(() => {
-      Alert.alert('خطأ', 'تعذّر تحميل قائمة المستخدمين');
-    }).finally(() => setLoading(false));
+    isBackendReachable().then(online => {
+      if (!online) {
+        Alert.alert('يتطلب اتصال بالإنترنت', 'لا يمكن عرض إدارة المستخدمين في وضع الأوفلاين.');
+        setLoading(false);
+        return;
+      }
+      usersApi.list().then(setUsers).catch(() => {
+        Alert.alert('خطأ', 'تعذّر تحميل قائمة المستخدمين');
+      }).finally(() => setLoading(false));
+    });
   };
 
   useEffect(() => { load(); }, []);

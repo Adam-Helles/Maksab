@@ -111,8 +111,8 @@ def pull_sync(
     invoices = get_query(Invoice)
     invoice_items = get_query(InvoiceItem)
 
-    invoice_fields = ["id", "invoice_number", "invoice_type", "status", "payment_method", "payment_status", "customer_id", "total", "paid_amount", "remaining_amount", "created_at", "updated_at", "is_deleted"]
-    invoice_item_fields = ["id", "invoice_id", "product_id", "quantity", "unit_type", "unit_price", "total", "created_at", "updated_at"]
+    invoice_fields = ["id", "invoice_number", "invoice_type", "status", "payment_method", "payment_status", "customer_id", "customer_name", "supplier_id", "subtotal", "discount_amount", "tax_amount", "total", "paid_amount", "remaining_amount", "notes", "created_at", "updated_at"]
+    invoice_item_fields = ["id", "invoice_id", "product_id", "product_name", "quantity", "unit_type", "unit_price", "cost_price", "pieces_per_carton", "total", "created_at", "updated_at"]
 
     # is_deleted is not in Invoice or InvoiceItem (only softdeletemixin)
     # Check if they have is_deleted

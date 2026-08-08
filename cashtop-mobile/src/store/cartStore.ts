@@ -3,7 +3,7 @@ import type { CartItem, Product } from '../types';
 
 interface CartState {
   items:           CartItem[];
-  customerId:      number | null;
+  customerId:      string | null;
   discountPercent: number;
   discountAmount:  number;
   taxPercent:      number;
@@ -17,11 +17,11 @@ interface CartState {
 
   // Actions
   addItem:         (product: Product, unit_type?: 'piece' | 'carton') => void;
-  removeItem:      (productId: number, unit_type: string) => void;
-  updateQty:       (productId: number, unit_type: string, qty: number) => void;
+  removeItem:      (productId: string, unit_type: string) => void;
+  updateQty:       (productId: string, unit_type: string, qty: number) => void;
   setDiscount:     (percent: number, amount: number) => void;
   setTax:          (percent: number) => void;
-  setCustomer:     (id: number | null) => void;
+  setCustomer:     (id: string | null) => void;
   setPaymentMethod:(method: string) => void;
   setNotes:        (notes: string) => void;
   clearCart:       () => void;

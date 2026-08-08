@@ -4,8 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, LoadingScreen } from '../../../src/components/ui';
-import { Colors, Fonts, Spacing } from '../../../src/types/theme';
+import { Colors, Fonts, Spacing, Radius } from '../../../src/types/theme';
 import { productsApi } from '../../../src/api';
+import { getProductById } from '../../../src/db/database';
+import { isBackendReachable } from '../../../src/api/client';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 
@@ -17,12 +19,27 @@ export default function ProductStockHistoryScreen() {
   const [product, setProduct] = useState<any>(null);
   const [movements, setMovements] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isOffline, setIsOffline] = useState(false);
 
   useEffect(() => {
     async function load() {
       try {
-        const prod = await productsApi.get(productId);
-        setProduct(prod);
+        const localProd = getProductById(id);
+        if (localProd) {
+          setProduct(localProd);
+        }
+
+        const online = await isBackendReachable();
+        if (!online) {
+          setIsOffline(true);
+          setLoading(false);
+          return;
+        }
+
+        if (!localProd) {
+          const prod = await productsApi.get(productId);
+          setProduct(prod);
+        }
         
         const movs = await productsApi.getMovements(productId);
         setMovements(movs);
@@ -57,14 +74,21 @@ export default function ProductStockHistoryScreen() {
         
         <Card style={{ marginBottom: Spacing.md, backgroundColor: '#F8FAFC' }}>
           <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Text style={{ fontSize: Fonts.sizes.md, fontWeight: '700', color: Colors.gray700 }}>الكمية الحالية المتوفرة:</Text>
+            <Text style={{ fontSize: Fonts.sizes.base, fontWeight: '700', color: Colors.gray700 }}>الكمية الحالية المتوفرة:</Text>
             <Text style={{ fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.primary }}>
               {product.stock_quantity}
             </Text>
           </View>
         </Card>
 
-        {movements.length === 0 ? (
+        {isOffline ? (
+          <View style={{ alignItems: 'center', marginTop: 40, padding: 20, backgroundColor: Colors.white, borderRadius: Radius.lg }}>
+            <Ionicons name="cloud-offline-outline" size={48} color={Colors.gray400} />
+            <Text style={{ textAlign: 'center', color: Colors.gray600, marginTop: 12, fontWeight: '700' }}>
+              يتطلب اتصال بالإنترنت لعرض حركة المخزون بالتفصيل
+            </Text>
+          </View>
+        ) : movements.length === 0 ? (
           <Text style={{ textAlign: 'center', color: Colors.gray400, marginTop: 40 }}>لا توجد حركات مسجلة</Text>
         ) : (
           movements.map((mov: any) => (

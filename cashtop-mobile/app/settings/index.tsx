@@ -8,6 +8,8 @@ import { Colors, Fonts, Spacing } from '../../src/types/theme';
 import { settingsApi, type StoreSettings } from '../../src/api/settings';
 import { useIsManager } from '../../src/store/authStore';
 
+import { isBackendReachable } from '../../src/api/client';
+
 export default function SettingsScreen() {
   const router = useRouter();
   const isManager = useIsManager();
@@ -17,10 +19,17 @@ export default function SettingsScreen() {
   const [form, setForm] = useState<Partial<StoreSettings>>({});
 
   useEffect(() => {
-    settingsApi.get()
-      .then(setForm)
-      .catch(() => Alert.alert('خطأ', 'تعذّر تحميل إعدادات المحل'))
-      .finally(() => setLoading(false));
+    isBackendReachable().then(online => {
+      if (!online) {
+        Alert.alert('يتطلب اتصال بالإنترنت', 'لا يمكن عرض إعدادات النظام في وضع الأوفلاين.');
+        setLoading(false);
+        return;
+      }
+      settingsApi.get()
+        .then(setForm)
+        .catch(() => Alert.alert('خطأ', 'تعذّر تحميل إعدادات المحل'))
+        .finally(() => setLoading(false));
+    });
   }, []);
 
   const set = <K extends keyof StoreSettings>(key: K, value: StoreSettings[K]) =>

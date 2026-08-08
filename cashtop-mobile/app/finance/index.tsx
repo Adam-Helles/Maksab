@@ -5,24 +5,20 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
-import { dashboardApi } from '../../src/api';
-import type { DashboardSummary } from '../../src/types';
-
+import { getDashboardStats } from '../../src/db/database';
+import { isBackendReachable } from '../../src/api/client';
 import { financeApi } from '../../src/api/reports';
-import { getLocalCustomerFinanceStats } from '../../src/db/customerSync';
 
 export default function FinanceScreen() {
   const router = useRouter();
-  const [summary, setSummary] = useState<DashboardSummary | null>(null);
+  const [summary, setSummary] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
   const [repairing, setRepairing] = useState(false);
 
-  const loadData = async () => {
+  const loadData = () => {
     setLoading(true);
     try {
-      // أعد حساب الأرصدة أولاً قبل جلب الملخص
-      await financeApi.repairDebts().catch(() => {});
-      const data = await dashboardApi.summary();
+      const data = getDashboardStats();
       setSummary(data);
     } catch {}
     finally { setLoading(false); }
@@ -31,12 +27,16 @@ export default function FinanceScreen() {
   useEffect(() => { loadData(); }, []);
 
   const handleRepair = async () => {
+    const online = await isBackendReachable();
+    if (!online) {
+      Alert.alert('غير متصل', 'تحتاج إلى اتصال بالإنترنت لإصلاح الأرصدة مع الخادم');
+      return;
+    }
     setRepairing(true);
     try {
       const result = await financeApi.repairDebts();
-      const data   = await dashboardApi.summary();
-      setSummary(data);
       Alert.alert('تم الإصلاح ✅', `تم تصحيح ${result.fixed_count} رصيد عميل من الفواتير الفعلية`);
+      loadData(); // refresh local stats although they might be updated after sync
     } catch {
       Alert.alert('خطأ', 'تعذّر إصلاح الأرصدة، تحقق من الاتصال بالسيرفر');
     } finally {
@@ -44,11 +44,10 @@ export default function FinanceScreen() {
     }
   };
 
-  const f = summary?.finance;
-  const localStats = getLocalCustomerFinanceStats();
+  const f = summary?.summary?.finance;
   
-  const finalCustomersDebt = localStats.customers_debt || f?.customers_debt || 0;
-  const finalTotalCustomers = localStats.total_customers || f?.total_customers || 0;
+  const finalCustomersDebt = f?.customers_debt || 0;
+  const finalTotalCustomers = f?.total_customers || 0;
   const finalSuppliersDebt = f?.suppliers_debt || 0;
   const finalNetReceivable = finalCustomersDebt - finalSuppliersDebt;
 
@@ -128,7 +127,7 @@ export default function FinanceScreen() {
                 ? <ActivityIndicator size="small" color={Colors.warning} />
                 : <Ionicons name="refresh-outline" size={20} color={Colors.warning} />}
               <Text style={{ flex: 1, fontWeight: '600', color: Colors.warning, textAlign: 'right' }}>
-                إصلاح أرصدة الديون تلقائياً
+                إصلاح أرصدة الديون تلقائياً (يتطلب إنترنت)
               </Text>
             </TouchableOpacity>
           </Card>

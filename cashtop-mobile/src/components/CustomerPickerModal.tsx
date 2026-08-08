@@ -8,9 +8,7 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { customersApi } from "../api";
-import { isBackendReachable } from "../api/client";
-import { searchCustomersCache } from "../db/customerSync";
+import { searchCustomers } from "../db/database";
 import type { Customer } from "../types";
 import { Colors, Fonts, Radius, Spacing } from "../types/theme";
 import { Badge, Input } from "./ui";
@@ -29,33 +27,16 @@ export const CustomerPickerModal: React.FC<CustomerPickerModalProps> = ({
   const [search, setSearch] = useState("");
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
-  const [offline, setOffline] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
     setLoading(true);
-    const t = setTimeout(async () => {
+    const t = setTimeout(() => {
       try {
-        const isOnline = await isBackendReachable();
-
-        if (isOnline) {
-          const data = await customersApi.list({ search: search.trim() || undefined });
-          setOffline(false);
-          setCustomers(data);
-        } else {
-          // ⚠️ لا يوجد نت — نبحث بالكاش المحلي (customers_cache).
-          // LocalCustomer فيها نفس الحقول المعروضة هون (name/phone/current_debt)
-          // بس ناقصها بعض حقول Customer الكاملة (available_credit وغيرها) —
-          // مش مستخدمة بهاي الشاشة أصلاً، فالـ cast آمن هون.
-          const cached = searchCustomersCache(search.trim());
-          setOffline(true);
-          setCustomers(cached as unknown as Customer[]);
-        }
-      } catch {
-        // فشل الطلب الأونلاين (مثلاً انقطع النت أثناء المحاولة) → fallback للكاش
-        const cached = searchCustomersCache(search.trim());
-        setOffline(true);
+        const cached = searchCustomers(search.trim());
         setCustomers(cached as unknown as Customer[]);
+      } catch {
+        setCustomers([]);
       } finally {
         setLoading(false);
       }
@@ -92,24 +73,6 @@ export const CustomerPickerModal: React.FC<CustomerPickerModalProps> = ({
             <Ionicons name="close" size={26} color={Colors.gray600} />
           </TouchableOpacity>
         </View>
-
-        {offline && (
-          <View
-            style={{
-              flexDirection: "row-reverse",
-              alignItems: "center",
-              gap: 6,
-              backgroundColor: "#FFF3CD",
-              paddingVertical: 8,
-              paddingHorizontal: Spacing.lg,
-            }}
-          >
-            <Ionicons name="cloud-offline-outline" size={16} color="#8A6D00" />
-            <Text style={{ fontSize: 12, color: "#8A6D00", fontWeight: "600" }}>
-              أوفلاين — نتائج من آخر مزامنة، قد لا تكون محدّثة تماماً
-            </Text>
-          </View>
-        )}
 
         <View style={{ padding: Spacing.lg, paddingBottom: 0 }}>
           <Input

@@ -114,7 +114,11 @@ export type LocalDebtPayment = {
 // ----------------------------------------------------------------------
 
 export function runInTransaction<T>(callback: () => T): T {
-  return db.withTransactionSync(callback);
+  let result: T;
+  db.withTransactionSync(() => {
+    result = callback();
+  });
+  return result!;
 }
 
 // تهيئة قاعدة البيانات وإنشاء الجداول
@@ -451,7 +455,7 @@ export function createLocalInvoice(
     id: invoiceId,
     created_at: now,
     updated_at: now,
-    sync_status: invoiceData.sync_status || 'pending_create'
+    sync_status: (invoiceData.sync_status as SyncStatus) || 'pending_create'
   };
 
   db.runSync(
@@ -486,6 +490,11 @@ export function getInvoiceItems(invoiceId: string): LocalInvoiceItem[] {
 export function getInvoicesForCustomer(customerId: string): LocalInvoice[] {
   return db.getAllSync<LocalInvoice>('SELECT * FROM invoices WHERE customer_id = ? ORDER BY created_at DESC', customerId);
 }
+
+export function getInvoicesForSupplier(supplierId: string): LocalInvoice[] {
+  return db.getAllSync<LocalInvoice>('SELECT * FROM invoices WHERE supplier_id = ? ORDER BY created_at DESC', supplierId);
+}
+
 
 export function getAllInvoices(limit = 100): LocalInvoice[] {
   return db.getAllSync<LocalInvoice>('SELECT * FROM invoices ORDER BY created_at DESC LIMIT ?', limit);
@@ -552,7 +561,7 @@ export function upsertInvoiceItem(data: Partial<LocalInvoiceItem> & { id: string
         id, invoice_id, product_id, product_name, quantity, unit_type,
         unit_price, cost_price, pieces_per_carton, total
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      data.id, data.invoice_id, data.product_id, data.product_name || null, data.quantity || 1,
+      data.id, data.invoice_id ?? '', data.product_id ?? '', data.product_name || null, data.quantity || 1,
       data.unit_type || 'piece', data.unit_price || 0, data.cost_price || 0, data.pieces_per_carton || 1,
       data.total || 0
     );
@@ -583,6 +592,11 @@ export function getAllSuppliers(): LocalSupplier[] {
   return db.getAllSync<LocalSupplier>('SELECT * FROM suppliers');
 }
 
+export function getSupplierById(id: string): LocalSupplier | null {
+  return db.getFirstSync<LocalSupplier>('SELECT * FROM suppliers WHERE id = ?', id);
+}
+
+
 export function upsertSupplier(data: Partial<LocalSupplier> & { id: string }): void {
   const existing = db.getFirstSync<LocalSupplier>('SELECT * FROM suppliers WHERE id = ?', data.id);
   const now = new Date().toISOString();
@@ -605,6 +619,13 @@ export function upsertSupplier(data: Partial<LocalSupplier> & { id: string }): v
       data.current_balance || 0, data.created_at || now, now, data.sync_status || 'synced'
     );
   }
+}
+
+export function updateSupplierBalance(supplierId: string, balanceDelta: number): void {
+  db.runSync(
+    'UPDATE suppliers SET current_balance = current_balance + ?, updated_at = ?, sync_status = "pending_update" WHERE id = ?',
+    balanceDelta, new Date().toISOString(), supplierId
+  );
 }
 
 // ----------------------------------------------------------------------
@@ -697,7 +718,13 @@ export function getDashboardStats(): any {
   let todayCost = 0;
   for (const inv of todaySales) {
     const items = getInvoiceItems(inv.id);
-    todayCost += items.reduce((sum, item) => sum + (item.cost_price * item.quantity), 0);
+    todayCost += items.reduce((sum, item) => {
+      // التكلفة الصحيحة: إذا وحدة البيع كرتونة → اضرب بعدد القطع في الكرتونة
+      const piecesQty = item.unit_type === 'carton'
+        ? item.quantity * (item.pieces_per_carton || 1)
+        : item.quantity;
+      return sum + (item.cost_price * piecesQty);
+    }, 0);
   }
   const todayProfit = todayRevenue - todayCost;
   const todayMargin = todayRevenue > 0 ? (todayProfit / todayRevenue) * 100 : 0;
@@ -709,7 +736,13 @@ export function getDashboardStats(): any {
   let monthCost = 0;
   for (const inv of monthInvoices) {
     const items = getInvoiceItems(inv.id);
-    monthCost += items.reduce((sum, item) => sum + (item.cost_price * item.quantity), 0);
+    monthCost += items.reduce((sum, item) => {
+      // التكلفة الصحيحة: إذا وحدة البيع كرتونة → اضرب بعدد القطع في الكرتونة
+      const piecesQty = item.unit_type === 'carton'
+        ? item.quantity * (item.pieces_per_carton || 1)
+        : item.quantity;
+      return sum + (item.cost_price * piecesQty);
+    }, 0);
   }
   const monthProfit = monthRevenue - monthCost;
   const monthMargin = monthRevenue > 0 ? (monthProfit / monthRevenue) * 100 : 0;
@@ -734,7 +767,8 @@ export function getDashboardStats(): any {
   // ديون
   const customers = getAllCustomers(false);
   const customersDebt = customers.reduce((sum, c) => sum + c.current_debt, 0);
-  const suppliersDebt = 0; // إذا أردت حساب ديون الموردين مستقبلا
+  const suppliers = getAllSuppliers();
+  const suppliersDebt = suppliers.reduce((sum, s) => sum + s.current_balance, 0);
 
   // أعلى المنتجات
   // سنجلب آخر 100 فاتورة لتبسيط الحسبة المحلية
