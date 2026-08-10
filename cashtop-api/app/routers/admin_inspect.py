@@ -11,11 +11,11 @@ from pydantic import BaseModel
 
 from app.database import get_db
 from app.core.auth import require_admin
-from app.models.user import User, UserRole
+from app.models.user import User
 from app.models.customer import Customer
 from app.models.supplier import Supplier
 from app.models.product import Product
-from app.models.invoice import Invoice, InvoiceItem, Payment
+from app.models.invoice import Invoice, InvoiceItem
 from app.models.debt_payment import DebtPayment
 from app.models.store import Store
 
@@ -32,7 +32,6 @@ class DBCountsResponse(BaseModel):
     invoices_count: int
     invoice_items_count: int
     debt_payments_count: int
-    # Totals across ALL stores (for super-admin awareness)
     total_stores_global: int
     total_users_global: int
     note: str
@@ -56,25 +55,20 @@ def get_db_counts(
     sid = current_admin.store_id
 
     # Per-store counts (tenant-scoped)
-    customers_count  = db.query(Customer).filter(Customer.store_id == sid).count()
-    suppliers_count  = db.query(Customer).filter(Customer.store_id == sid).count()
-
-    # Suppliers uses its own model
-    from app.models.supplier import Supplier as SupplierModel
-    suppliers_count  = db.query(SupplierModel).filter(SupplierModel.store_id == sid).count()
-
-    products_count   = db.query(Product).filter(Product.store_id == sid).count()
-    invoices_count   = db.query(Invoice).filter(Invoice.store_id == sid).count()
+    customers_count     = db.query(Customer).filter(Customer.store_id == sid).count()
+    suppliers_count     = db.query(Supplier).filter(Supplier.store_id == sid).count()
+    products_count      = db.query(Product).filter(Product.store_id == sid).count()
+    invoices_count      = db.query(Invoice).filter(Invoice.store_id == sid).count()
     invoice_items_count = db.query(InvoiceItem).filter(InvoiceItem.store_id == sid).count()
     debt_payments_count = db.query(DebtPayment).filter(DebtPayment.store_id == sid).count()
-    users_count      = db.query(User).filter(User.store_id == sid).count()
-    stores_count     = db.query(Store).filter(Store.id == sid).count()  # always 1 for this store
+    users_count         = db.query(User).filter(User.store_id == sid).count()
+    stores_count        = db.query(Store).filter(Store.id == sid).count()  # always 1
 
-    # Global totals (to detect data in OTHER stores)
+    # Global totals (to detect data across all stores)
     total_stores_global = db.query(Store).count()
     total_users_global  = db.query(User).count()
 
-    # Determine if DB looks empty
+    # Determine safety note
     total_records = (
         customers_count + suppliers_count + products_count +
         invoices_count + invoice_items_count + debt_payments_count
@@ -82,7 +76,10 @@ def get_db_counts(
     if total_records == 0 and total_stores_global <= 1:
         note = "DATABASE APPEARS EMPTY — safe to run rebuild_db.py"
     else:
-        note = f"DATABASE CONTAINS DATA — {total_records} business records in this store; {total_stores_global} store(s) total. DO NOT rebuild."
+        note = (
+            f"DATABASE CONTAINS DATA — {total_records} business records in this store; "
+            f"{total_stores_global} store(s) globally. DO NOT rebuild without data migration."
+        )
 
     return DBCountsResponse(
         stores_count=stores_count,
