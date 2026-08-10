@@ -24,17 +24,17 @@ def create_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     return jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_access_token(user_id: int, role: str) -> str:
+def create_access_token(user_id: str, role: str) -> str:
     return create_token(
         {"sub": str(user_id), "role": role, "type": "access"},
         timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
 
 
-def create_refresh_token(user_id: int, jti: str) -> str:
+def create_refresh_token(user_id: str, jti: str) -> str:
     """
     ⚠️ jti (معرّف فريد لهاد التوكن بالذات) لازم يجي من الطرف المسؤول عن
-    تخزين سجل الـ refresh token بجدول refresh_tokens
+    تخزين سجل الـ refresh token بجدول app_refresh_tokens
     (شوف app.core.token_service.issue_refresh_token).
     ما تستدعي هاي الدالة مباشرة بدون سجل مطابق بالداتابيز، وإلا الـ
     rotation وكشف السرقة ما رح يشتغلوا.

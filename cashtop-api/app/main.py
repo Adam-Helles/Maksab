@@ -32,27 +32,12 @@ def create_tables():
     except Exception:
         pass  # Column already exists
 
-    # Migration 2: Fix refresh_tokens.user_id from INTEGER → VARCHAR(36) if needed.
-    # This is safe: we DELETE stale rows first (old integer IDs are unusable after UUID migration),
-    # then ALTER the column type. On SQLite this is a no-op (already VARCHAR). On PostgreSQL
-    # the USING cast converts any remaining integer values to text strings safely.
-    try:
-        with engine.begin() as conn:
-            # Check current column type
-            result = conn.execute(text(
-                "SELECT data_type FROM information_schema.columns "
-                "WHERE table_name='refresh_tokens' AND column_name='user_id'"
-            ))
-            row = result.fetchone()
-            if row and row[0].lower() in ("integer", "bigint", "int", "int4", "int8"):
-                # Clear stale tokens — they are unusable anyway (integer IDs gone after UUID migration)
-                conn.execute(text("DELETE FROM refresh_tokens;"))
-                # Alter column type to VARCHAR(36)
-                conn.execute(text(
-                    "ALTER TABLE refresh_tokens ALTER COLUMN user_id TYPE VARCHAR(36) USING user_id::TEXT;"
-                ))
-    except Exception:
-        pass  # SQLite or column already correct — ignore
+    # Migration 2 (REMOVED):
+    # Previously attempted to ALTER refresh_tokens.user_id — but refresh_tokens
+    # in the public schema is a Supabase/GoTrue internal table and must NOT be
+    # modified by our application. Our app now uses 'app_refresh_tokens' instead.
+    # The UUID migration script (migrate_to_uuid.py) creates app_refresh_tokens
+    # with the correct schema.
 
 
 
@@ -98,6 +83,7 @@ async def lifespan(app: FastAPI):
     task.cancel()
 
 async def cleanup_expired_tokens():
+    """Background task: purge expired and revoked app_refresh_tokens every 24h."""
     from app.models.refresh_token import RefreshToken
     while True:
         try:
@@ -110,7 +96,6 @@ async def cleanup_expired_tokens():
             db.close()
         except Exception:
             pass
-        # Sleep for 24 hours
         await asyncio.sleep(86400)
 
 

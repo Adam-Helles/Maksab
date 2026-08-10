@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+from typing import Optional
 
 from app.database import get_db
 from app.core.security import decode_token
@@ -68,13 +69,13 @@ def get_current_user(user: User = Depends(_get_current_user)) -> User:
     return user
 
 
-def get_current_store_id(user: User = Depends(_get_current_user)) -> int:
+def get_current_store_id(user: User = Depends(_get_current_user)) -> str:
     """
     مصدر الحقيقة الوحيد لـ store_id بأي endpoint.
     ⚠️ لا تقبل store_id أبداً من body/query/path المستخدم — استخدم هاد
     الـ dependency حصراً بكل query أو write operation.
     """
-    return user.store_id
+    return str(user.store_id)
 
 
 def require_admin(user: User = Depends(_get_current_user)) -> User:

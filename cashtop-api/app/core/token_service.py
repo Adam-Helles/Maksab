@@ -13,7 +13,7 @@ from app.core.security import create_refresh_token
 from app.models.refresh_token import RefreshToken
 
 
-def issue_refresh_token(db: Session, user_id: int) -> str:
+def issue_refresh_token(db: Session, user_id: str) -> str:
     """
     يولّد refresh token جديد، يخزّن سجله بالداتابيز كـ active،
     ويرجّع نص التوكن الجاهز للإرسال للعميل.
@@ -36,7 +36,7 @@ def issue_refresh_token(db: Session, user_id: int) -> str:
     return token
 
 
-def revoke_all_user_tokens(db: Session, user_id: int) -> None:
+def revoke_all_user_tokens(db: Session, user_id: str) -> None:
     """
     يلغي كل الـ refresh tokens النشطة لمستخدم معيّن — بيستخدم عند كشف
     محاولة إعادة استخدام توكن ملغى (مؤشر سرقة) لعمل logout من كل الأجهزة.
