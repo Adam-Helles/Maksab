@@ -23,13 +23,36 @@ if settings.SENTRY_DSN:
 def create_tables():
     Base.metadata.create_all(bind=engine)
     
-    # محاولة إضافة عمود allowed_device_id إذا لم يكن موجوداً
+    from sqlalchemy import text
+
+    # Migration 1: Add allowed_device_id to stores if missing
     try:
-        from sqlalchemy import text
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE stores ADD COLUMN allowed_device_id VARCHAR(255) NULL;"))
     except Exception:
-        pass  # العمود موجود بالفعل أو خطأ آخر
+        pass  # Column already exists
+
+    # Migration 2: Fix refresh_tokens.user_id from INTEGER → VARCHAR(36) if needed.
+    # This is safe: we DELETE stale rows first (old integer IDs are unusable after UUID migration),
+    # then ALTER the column type. On SQLite this is a no-op (already VARCHAR). On PostgreSQL
+    # the USING cast converts any remaining integer values to text strings safely.
+    try:
+        with engine.begin() as conn:
+            # Check current column type
+            result = conn.execute(text(
+                "SELECT data_type FROM information_schema.columns "
+                "WHERE table_name='refresh_tokens' AND column_name='user_id'"
+            ))
+            row = result.fetchone()
+            if row and row[0].lower() in ("integer", "bigint", "int", "int4", "int8"):
+                # Clear stale tokens — they are unusable anyway (integer IDs gone after UUID migration)
+                conn.execute(text("DELETE FROM refresh_tokens;"))
+                # Alter column type to VARCHAR(36)
+                conn.execute(text(
+                    "ALTER TABLE refresh_tokens ALTER COLUMN user_id TYPE VARCHAR(36) USING user_id::TEXT;"
+                ))
+    except Exception:
+        pass  # SQLite or column already correct — ignore
 
 
 
