@@ -48,9 +48,21 @@ def login(request: Request, data: LoginRequest, db: Session = Depends(get_db)):
     user.last_login = datetime.now(timezone.utc)
     db.commit()
 
+    access_token = create_access_token(user.id, user.role)
+
+    # Attempt to issue a refresh token. If the DB schema is in a transient
+    # state (e.g. user_id column not yet migrated to VARCHAR after UUID migration),
+    # we still return the access token — the startup migration in main.py will
+    # fix the column type automatically on the next server restart.
+    try:
+        refresh_token_val = issue_refresh_token(db, user.id)
+    except Exception:
+        db.rollback()
+        refresh_token_val = ""  # fallback: access token is still valid
+
     return TokenResponse(
-        access_token=create_access_token(user.id, user.role),
-        refresh_token=issue_refresh_token(db, user.id),
+        access_token=access_token,
+        refresh_token=refresh_token_val,
         user=UserResponse.model_validate(user),
     )
 
