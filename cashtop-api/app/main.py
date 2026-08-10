@@ -135,7 +135,9 @@ from app.routers import product_sync
 from app.routers import universal_sync
 from app.routers import offline_purchases_sync
 from app.routers.licenses import router as licenses_router
+from app.routers.admin_inspect import router as admin_inspect_router
 
+app.include_router(admin_inspect_router, prefix="/api/v1")
 app.include_router(universal_sync.router, prefix="/api/v1")
 app.include_router(licenses_router, prefix="/api/v1")
 app.include_router(customer_sync.router, prefix="/api/v1")
