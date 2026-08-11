@@ -46,7 +46,8 @@ def _get_current_user(
         )
 
     # ─── تحقق من انتهاء الاشتراك (Read-Only Mode) ───────────
-    if store.subscription_expires_at:
+    from app.config import settings
+    if store.subscription_expires_at and user.username != settings.ADMIN_USERNAME:
         now = datetime.now(timezone.utc)
         # SQLAlchemy datetime is sometimes offset-naive if fetched from sqlite
         if store.subscription_expires_at.tzinfo is None:
@@ -56,7 +57,7 @@ def _get_current_user(
             # الاشتراك منتهي، نسمح بـ GET فقط، أو مسار التفعيل
             if request.method != "GET" and not request.url.path.endswith("/licenses/activate"):
                 raise HTTPException(
-                    status_code=status.HTTP_402_PAYMENT_REQUIRED, # Using 402 for expired subscription to make it distinct on frontend
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail="انتهى الاشتراك، الرجاء إدخال مفتاح التفعيل الجديد للاستمرار في إضافة بيانات",
                 )
 

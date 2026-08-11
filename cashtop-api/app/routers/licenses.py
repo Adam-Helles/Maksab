@@ -11,6 +11,7 @@ from app.models.store import Store
 from app.models.user import User, UserRole
 from app.schemas.license import LicenseKeyGenerateRequest, LicenseKeyActivateRequest, LicenseKeyResponse
 from app.core.auth import get_current_user, require_admin
+from app.config import settings
 
 router = APIRouter(prefix="/licenses", tags=["🔑 التراخيص والاشتراكات"])
 
@@ -23,10 +24,10 @@ def generate_keys(
     data: LicenseKeyGenerateRequest,
     db: Session = Depends(get_db),
     # نحن نستخدم role.ADMIN كمدير عام حاليا، ولكن في نظام SaaS حقيقي قد يكون هناك System Admin خاص
-    # سنفترض أن المستخدم الأول (المتجر رقم 1) هو صاحب النظام (Super Admin)
+    # نعتمد على ADMIN_USERNAME لتحديد مدير النظام الأساسي
     user: User = Depends(require_admin)
 ):
-    if user.store_id != 1:
+    if user.username != settings.ADMIN_USERNAME:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="فقط مدير النظام الأساسي يمكنه توليد مفاتيح"
@@ -55,7 +56,7 @@ def list_keys(
     db: Session = Depends(get_db),
     user: User = Depends(require_admin)
 ):
-    if user.store_id != 1:
+    if user.username != settings.ADMIN_USERNAME:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="فقط مدير النظام الأساسي يمكنه عرض المفاتيح"
