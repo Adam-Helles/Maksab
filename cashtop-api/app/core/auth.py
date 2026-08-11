@@ -37,6 +37,11 @@ def _get_current_user(
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="المستخدم غير موجود أو غير نشط")
 
+    # ─── Super Admin Bypass (no store required) ──────────────
+    from app.config import settings
+    if user.username == settings.ADMIN_USERNAME:
+        return user
+
     # ─── تحقق من حالة المحل (الاشتراك) ──────────────────────
     store = db.query(Store).filter(Store.id == user.store_id).first()
     if not store or not store.is_active:
@@ -46,8 +51,7 @@ def _get_current_user(
         )
 
     # ─── تحقق من انتهاء الاشتراك (Read-Only Mode) ───────────
-    from app.config import settings
-    if store.subscription_expires_at and user.username != settings.ADMIN_USERNAME:
+    if store.subscription_expires_at:
         now = datetime.now(timezone.utc)
         # SQLAlchemy datetime is sometimes offset-naive if fetched from sqlite
         if store.subscription_expires_at.tzinfo is None:
@@ -62,6 +66,7 @@ def _get_current_user(
                 )
 
     return user
+
 
 
 # ─── Dependencies جاهزة للاستخدام في الـ Routes ────────────
