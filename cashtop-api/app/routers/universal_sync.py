@@ -83,10 +83,13 @@ def pull_sync(
     """
     Pull all changes since the given timestamp.
     """
+    # Capture server time BEFORE running queries
+    sync_cursor = datetime.now(timezone.utc)
+
     def get_query(model):
         query = db.query(model).filter(model.store_id == store_id)
         if since:
-            query = query.filter(model.updated_at >= since)
+            query = query.filter(model.server_updated_at >= since)
         return query.all()
 
     def serialize_model(instances, fields=None):
@@ -120,7 +123,7 @@ def pull_sync(
     invoice_item_fields = [f for f in invoice_item_fields if hasattr(InvoiceItem, f)]
 
     return {
-        "server_time": datetime.now(timezone.utc),
+        "server_time": sync_cursor,
         "customers": serialize_model(customers),
         "products": serialize_model(products),
         "invoices": serialize_model(invoices, invoice_fields),
@@ -141,6 +144,11 @@ def push_sync(
     """
     accepted = []
     skipped = []
+    
+    # Track inserted master data in this payload to avoid double-counting side-effects
+    inserted_customers = set()
+    inserted_products = set()
+    inserted_suppliers = set()
 
     # Map entity names to their SQLAlchemy models
     entities_map = {
@@ -199,10 +207,17 @@ def push_sync(
                     db.add(new_instance)
                     accepted.append(record_id)
                     
+                    if entity_key == "customers":
+                        inserted_customers.add(record_id)
+                    elif entity_key == "products":
+                        inserted_products.add(record_id)
+                    elif entity_key == "suppliers":
+                        inserted_suppliers.add(record_id)
+                    
                     # Custom logic for Invoices: update customer debt on credit
                     if entity_key == "invoices" and record_data.get("payment_method") == PaymentMethod.CREDIT.value:
                         customer_id = record_data.get("customer_id")
-                        if customer_id:
+                        if customer_id and customer_id not in inserted_customers:
                             customer = db.query(Customer).filter(
                                 Customer.id == customer_id, 
                                 Customer.store_id == store_id
@@ -214,7 +229,7 @@ def push_sync(
                     # Custom logic for Payments: reduce customer debt
                     if entity_key == "payments":
                         customer_id = record_data.get("customer_id")
-                        if customer_id:
+                        if customer_id and customer_id not in inserted_customers:
                             customer = db.query(Customer).filter(
                                 Customer.id == customer_id,
                                 Customer.store_id == store_id
@@ -227,25 +242,36 @@ def push_sync(
                     if entity_key == "invoice_items":
                         product_id = record_data.get("product_id")
                         invoice_id = record_data.get("invoice_id")
-                        if product_id and invoice_id:
+                        if product_id and invoice_id and product_id not in inserted_products:
                             product = db.query(Product).filter(
                                 Product.id == product_id,
                                 Product.store_id == store_id
                             ).first()
+                            db.flush()
                             invoice = db.query(Invoice).filter(
                                 Invoice.id == invoice_id,
                                 Invoice.store_id == store_id
                             ).first()
+                            if not invoice:
+                                all_invs = db.query(Invoice).filter(Invoice.id == invoice_id).all()
+                                logger.error(f"DEBUG: Invoice not found with store_id={store_id}. Found without store_id? {all_invs}")
                             if product and invoice:
                                 qty = float(record_data.get("quantity", 0.0))
                                 unit_type = record_data.get("unit_type", "piece")
                                 pieces_per_carton = int(record_data.get("pieces_per_carton", 1))
                                 qty_pieces = qty * pieces_per_carton if unit_type == "carton" else qty
                                 
-                                if invoice.invoice_type == "sale":
+                                invoice_type_val = invoice.invoice_type.value if hasattr(invoice.invoice_type, 'value') else str(invoice.invoice_type)
+                                logger.error(f"DEBUG: Applying side effect for product {product.id}, current stock: {product.stock_quantity}, invoice_type: {invoice_type_val}, qty: {qty_pieces}")
+                                if invoice_type_val.lower() == "sale":
                                     product.stock_quantity -= qty_pieces
                                 else:
                                     product.stock_quantity += qty_pieces
+                                logger.error(f"DEBUG: New stock: {product.stock_quantity}")
+                            else:
+                                logger.error(f"DEBUG: Product or Invoice not found! product={bool(product)}, invoice={bool(invoice)}")
+                        else:
+                            logger.error(f"DEBUG: Side effect skipped. product_id: {product_id}, invoice_id: {invoice_id}, in_inserted: {product_id in inserted_products}")
 
         db.commit()
 

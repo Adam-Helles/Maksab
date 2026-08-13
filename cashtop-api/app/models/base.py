@@ -7,6 +7,7 @@ class TimestampMixin:
     """Mixin يضيف created_at و updated_at لكل الجداول"""
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    server_updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
 class SoftDeleteMixin:
