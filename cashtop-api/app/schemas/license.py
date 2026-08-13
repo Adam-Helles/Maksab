@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime
 
 class LicenseKeyGenerateRequest(BaseModel):
-    days_valid: str
+    days_valid: int
     count: Optional[int] = 1  # How many keys to generate
 
 class LicenseKeyActivateRequest(BaseModel):
@@ -12,10 +12,10 @@ class LicenseKeyActivateRequest(BaseModel):
 class LicenseKeyResponse(BaseModel):
     id: str
     key: str
-    days_valid: str
+    days_valid: int
     is_used: bool
     used_at: Optional[datetime]
-    used_by_store_id: Optional[int]
+    used_by_store_id: Optional[str]
 
     class Config:
         from_attributes = True

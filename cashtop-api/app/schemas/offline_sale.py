@@ -48,7 +48,7 @@ class OfflineSalePushRequest(BaseModel):
 
 class OfflineSaleResult(BaseModel):
     id: str  # نفس الـ client uuid — عشان الجهاز يعرف يطابقه مع سجله المحلي
-    server_invoice_id: Optional[int] = None
+    server_invoice_id: Optional[str] = None
     status: str  # "accepted" | "already_applied" | "rejected"
     needs_review: bool = False
     reason: Optional[str] = None

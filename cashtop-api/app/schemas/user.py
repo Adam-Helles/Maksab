@@ -50,6 +50,7 @@ class UserChangePassword(BaseModel):
 
 class UserResponse(BaseModel):
     id: str
+    store_id: Optional[str] = None
     username: str
     full_name: str
     email: Optional[str]

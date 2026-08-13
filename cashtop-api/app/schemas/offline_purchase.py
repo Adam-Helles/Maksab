@@ -48,7 +48,7 @@ class OfflinePurchasePushRequest(BaseModel):
 
 class OfflinePurchaseResult(BaseModel):
     id: str
-    server_invoice_id: Optional[int] = None
+    server_invoice_id: Optional[str] = None
     status: str  # "accepted" | "already_applied" | "rejected"
     needs_review: bool = False
     reason: Optional[str] = None
