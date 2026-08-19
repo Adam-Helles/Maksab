@@ -6,6 +6,7 @@ export type UserRole = 'admin' | 'manager' | 'cashier';
 
 export interface User {
   id: string;      // UUID
+  store_id: string; // UUID
   username: string;
   full_name: string;
   email?: string;

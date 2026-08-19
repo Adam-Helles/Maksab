@@ -13,10 +13,11 @@ import { api } from '../api/client';
 import {
   getLastSyncTime, setLastSyncTime,
   getPendingCustomers, getPendingProducts, getPendingInvoices,
-  getPendingDebtPayments, getPendingInvoiceItemsForInvoice,
-  markSynced,
+  getPendingDebtPayments,
+  getPendingDeleteDebtPayments, getPendingInvoiceItemsForInvoice,
+  markSynced, hardDeleteDebtPayment,
   upsertCustomer, upsertProduct, upsertInvoice, upsertInvoiceItem,
-  upsertCategory, upsertSupplier,
+  upsertCategory, upsertSupplier, upsertDebtPayment,
   LocalCustomer, LocalProduct, LocalInvoice, LocalInvoiceItem,
   LocalCategory, LocalSupplier,
   runInTransaction,
@@ -151,6 +152,20 @@ async function pullServerChanges() {
       count++;
     }
 
+    // دفعات (Debt Payments)
+    for (const p of (data.payments || [])) {
+      upsertDebtPayment({
+        id: p.id,
+        customer_id: p.customer_id,
+        amount: p.amount,
+        method: p.method,
+        notes: p.notes || null,
+        created_at: p.created_at,
+        sync_status: 'synced',
+      });
+      count++;
+    }
+
     // حفظ وقت آخر مزامنة
     if (data.server_time) {
       setLastSyncTime(data.server_time);
@@ -176,6 +191,7 @@ function mapCustomerForPush(c: LocalCustomer) {
     is_active: c.is_active === 1,
     created_at: c.created_at,
     updated_at: c.updated_at,
+    deleted_at: c.deleted_at || null,
   };
 }
 
@@ -243,8 +259,7 @@ function mapPaymentForPush(p: any) {
     amount: p.amount,
     method: p.method,
     notes: p.notes,
-    created_at: p.created_at,
-    updated_at: p.created_at,
+    client_created_at: p.created_at, // Send as client_created_at for customer_sync
   };
 }
 
@@ -268,17 +283,55 @@ async function pushLocalChanges() {
   const hasChanges =
     customers.length > 0 ||
     products.length > 0 ||
-    invoices.length > 0 ||
-    payments.length > 0;
+    invoices.length > 0;
 
-  if (!hasChanges) return { pushed: 0 };
+  let totalPushed = 0;
+
+  // 1. Push Payments separately to the specific endpoint that distributes them over invoices
+  if (payments.length > 0) {
+    try {
+      const { data: payData } = await api.post('/sync/customers/payments/push', {
+        payments: payments.map(mapPaymentForPush),
+      });
+      const acceptedPayments: string[] = payData.accepted || [];
+      const alreadyApplied: string[] = payData.already_applied || [];
+      for (const pay of payments) {
+        if (acceptedPayments.includes(pay.id) || alreadyApplied.includes(pay.id)) {
+          markSynced('debt_payments', pay.id);
+        }
+      }
+      totalPushed += acceptedPayments.length;
+    } catch (err) {
+      console.error('[SyncManager] Failed to push payments separately:', err);
+    }
+  }
+
+  // 1.5 Push Cancelled Payments
+  const cancelledPayments = getPendingDeleteDebtPayments();
+  if (cancelledPayments.length > 0) {
+    try {
+      const { data: cancelData } = await api.post('/sync/customers/payments/cancel', {
+        payment_ids: cancelledPayments.map(p => p.id),
+      });
+      const acceptedCancel: string[] = cancelData.accepted || [];
+      for (const p of cancelledPayments) {
+        if (acceptedCancel.includes(p.id)) {
+          hardDeleteDebtPayment(p.id);
+        }
+      }
+      totalPushed += acceptedCancel.length;
+    } catch (e) {
+      console.warn("Failed to push cancelled payments:", e);
+    }
+  }
+
+  if (!hasChanges) return { pushed: totalPushed };
 
   const { data } = await api.post('/sync/push', {
     customers: customers.map(mapCustomerForPush),
     products: products.map(mapProductForPush),
     invoices: invoices.map(mapInvoiceForPush),
     invoice_items: invoiceItems,
-    payments: payments.map(mapPaymentForPush),
   });
 
   // بعد قبول السيرفر، نعلّم كل عنصر على أنه synced
@@ -293,11 +346,10 @@ async function pushLocalChanges() {
   for (const inv of invoices) {
     if (accepted.includes(inv.id)) markSynced('invoices', inv.id);
   }
-  for (const pay of payments) {
-    if (accepted.includes(pay.id)) markSynced('debt_payments', pay.id);
-  }
 
-  return { pushed: accepted.length };
+  totalPushed += accepted.length;
+
+  return { pushed: totalPushed };
 }
 
 // ── syncAll: الدالة الرئيسية للمزامنة الكاملة ────────────────
@@ -319,4 +371,3 @@ export async function syncAll(): Promise<{ pushed: number; pulled: number; error
 
 // Alias للتوافق مع جميع الشاشات التي تستخدم runFullSync
 export const runFullSync = syncAll;
-

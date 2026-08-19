@@ -7,6 +7,7 @@ import { Input, Button, Card } from '../../src/components/ui';
 import { Colors, Fonts, Spacing } from '../../src/types/theme';
 import { settingsApi, type StoreSettings } from '../../src/api/settings';
 import { useIsManager } from '../../src/store/authStore';
+import { BackupRestoreSection } from '../../src/components/BackupRestoreSection';
 
 import { isBackendReachable } from '../../src/api/client';
 
@@ -21,13 +22,12 @@ export default function SettingsScreen() {
   useEffect(() => {
     isBackendReachable().then(online => {
       if (!online) {
-        Alert.alert('يتطلب اتصال بالإنترنت', 'لا يمكن عرض إعدادات النظام في وضع الأوفلاين.');
         setLoading(false);
         return;
       }
       settingsApi.get()
         .then(setForm)
-        .catch(() => Alert.alert('خطأ', 'تعذّر تحميل إعدادات المحل'))
+        .catch(() => {})
         .finally(() => setLoading(false));
     });
   }, []);
@@ -40,6 +40,13 @@ export default function SettingsScreen() {
       Alert.alert('اسم المحل مطلوب');
       return;
     }
+    
+    const online = await isBackendReachable();
+    if (!online) {
+      Alert.alert('يتطلب اتصال بالإنترنت', 'لا يمكن تعديل الإعدادات في وضع الأوفلاين.');
+      return;
+    }
+
     setSaving(true);
     try {
       const updated = await settingsApi.update({
@@ -145,6 +152,10 @@ export default function SettingsScreen() {
               editable={isManager}
             />
           </Card>
+
+          {isManager && (
+            <BackupRestoreSection />
+          )}
 
           {isManager && (
             <Button title="حفظ الإعدادات" onPress={handleSave} loading={saving} fullWidth size="lg" />

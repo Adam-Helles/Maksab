@@ -12,6 +12,7 @@ from app.models.product import Product
 from app.models.invoice import Invoice, InvoiceItem, Payment, PaymentMethod
 from app.models.category import Category
 from app.models.supplier import Supplier
+from app.models.debt_payment import DebtPayment
 
 router = APIRouter(prefix="/sync", tags=["Sync"])
 logger = logging.getLogger(__name__)
@@ -26,6 +27,7 @@ class PullSyncResponse(BaseModel):
     invoice_items: List[Dict[str, Any]]
     categories: List[Dict[str, Any]]
     suppliers: List[Dict[str, Any]]
+    payments: List[Dict[str, Any]] = []
 
 class PushSyncRequest(BaseModel):
     customers: List[Dict[str, Any]] = []
@@ -60,8 +62,8 @@ def dict_to_model(db_model, data: dict, store_id: str):
 
 def update_model(instance, data: dict):
     for key, value in data.items():
-        # Do not override store_id, id, or calculated fields
-        if key in ["id", "store_id", "current_debt", "stock_quantity", "balance"]:
+        # Do not override store_id, id, or balance (current_debt is allowed for direct sync)
+        if key in ["id", "store_id", "balance"]:
             continue
         if hasattr(instance, key):
             if key in ["created_at", "updated_at", "deleted_at", "invoice_date", "expiry_date"]:
@@ -96,40 +98,52 @@ def pull_sync(
         results = []
         for instance in instances:
             data = {}
-            for col in instance.__table__.columns:
-                if fields and col.name not in fields:
+            for column in instance.__table__.columns:
+                if fields and column.name not in fields:
                     continue
-                val = getattr(instance, col.name)
+                val = getattr(instance, column.name)
                 if isinstance(val, datetime):
-                    val = val.isoformat()
-                data[col.name] = val
+                    data[column.name] = val.isoformat()
+                elif isinstance(val, enum.Enum):
+                    data[column.name] = val.value
+                else:
+                    data[column.name] = val
             results.append(data)
         return results
 
-    # Get data
     customers = get_query(Customer)
     products = get_query(Product)
-    categories = get_query(Category)
-    suppliers = get_query(Supplier)
     invoices = get_query(Invoice)
     invoice_items = get_query(InvoiceItem)
+    categories = get_query(Category)
+    suppliers = get_query(Supplier)
 
-    invoice_fields = ["id", "invoice_number", "invoice_type", "status", "payment_method", "payment_status", "customer_id", "customer_name", "supplier_id", "subtotal", "discount_amount", "tax_amount", "total", "paid_amount", "remaining_amount", "notes", "created_at", "updated_at"]
-    invoice_item_fields = ["id", "invoice_id", "product_id", "product_name", "quantity", "unit_type", "unit_price", "cost_price", "pieces_per_carton", "total", "created_at", "updated_at"]
-
-    # is_deleted is not in Invoice or InvoiceItem (only softdeletemixin)
-    # Check if they have is_deleted
-    invoice_fields = [f for f in invoice_fields if hasattr(Invoice, f)]
-    invoice_item_fields = [f for f in invoice_item_fields if hasattr(InvoiceItem, f)]
+    # Debt payments logic...
+    payments_query = db.query(DebtPayment).filter(DebtPayment.store_id == store_id)
+    if since:
+        payments_query = payments_query.filter(DebtPayment.server_applied_at >= since)
+    payments = payments_query.all()
+    
+    serialized_payments = []
+    for p in payments:
+        serialized_payments.append({
+            "id": p.id,
+            "customer_id": p.customer_id,
+            "amount": p.amount,
+            "method": p.method,
+            "notes": "دفعة",
+            "created_at": p.client_created_at.isoformat() if p.client_created_at else None,
+        })
 
     return {
         "server_time": sync_cursor,
         "customers": serialize_model(customers),
         "products": serialize_model(products),
-        "invoices": serialize_model(invoices, invoice_fields),
-        "invoice_items": serialize_model(invoice_items, invoice_item_fields),
+        "invoices": serialize_model(invoices),
+        "invoice_items": serialize_model(invoice_items),
         "categories": serialize_model(categories),
-        "suppliers": serialize_model(suppliers)
+        "suppliers": serialize_model(suppliers),
+        "payments": serialized_payments
     }
 
 
@@ -149,6 +163,8 @@ def push_sync(
     inserted_customers = set()
     inserted_products = set()
     inserted_suppliers = set()
+    updated_products = set()
+    updated_customers = set()
 
     # Map entity names to their SQLAlchemy models
     entities_map = {
@@ -157,8 +173,7 @@ def push_sync(
         "customers": Customer,
         "products": Product,
         "invoices": Invoice,
-        "invoice_items": InvoiceItem,
-        "payments": Payment
+        "invoice_items": InvoiceItem
     }
 
     try:
@@ -201,6 +216,10 @@ def push_sync(
                     # Update
                     update_model(existing, record_data)
                     accepted.append(record_id)
+                    if entity_key == "products":
+                        updated_products.add(record_id)
+                    elif entity_key == "customers":
+                        updated_customers.add(record_id)
                 else:
                     # Insert
                     new_instance = dict_to_model(model_class, record_data, store_id)
@@ -217,7 +236,7 @@ def push_sync(
                     # Custom logic for Invoices: update customer debt on credit
                     if entity_key == "invoices" and record_data.get("payment_method") == PaymentMethod.CREDIT.value:
                         customer_id = record_data.get("customer_id")
-                        if customer_id and customer_id not in inserted_customers:
+                        if customer_id and customer_id not in inserted_customers and customer_id not in updated_customers:
                             customer = db.query(Customer).filter(
                                 Customer.id == customer_id, 
                                 Customer.store_id == store_id
@@ -229,7 +248,7 @@ def push_sync(
                     # Custom logic for Payments: reduce customer debt
                     if entity_key == "payments":
                         customer_id = record_data.get("customer_id")
-                        if customer_id and customer_id not in inserted_customers:
+                        if customer_id and customer_id not in inserted_customers and customer_id not in updated_customers:
                             customer = db.query(Customer).filter(
                                 Customer.id == customer_id,
                                 Customer.store_id == store_id
@@ -242,7 +261,7 @@ def push_sync(
                     if entity_key == "invoice_items":
                         product_id = record_data.get("product_id")
                         invoice_id = record_data.get("invoice_id")
-                        if product_id and invoice_id and product_id not in inserted_products:
+                        if product_id and invoice_id and product_id not in inserted_products and product_id not in updated_products:
                             product = db.query(Product).filter(
                                 Product.id == product_id,
                                 Product.store_id == store_id

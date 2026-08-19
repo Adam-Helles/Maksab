@@ -10,6 +10,11 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone
+import enum
+import uuid
+from pydantic import BaseModel
+from typing import List
 
 from app.database import get_db
 from app.models.customer import Customer
@@ -103,7 +108,7 @@ def push_payments(
                 amount      = apply,
                 method      = payment.method,
                 received_by = _.id,
-                notes       = "دفعة نقدية (أوفلاين)",
+                notes       = f"دفعة نقدية (أوفلاين) - {payment.id}",
             ))
 
         accepted.append(payment.id)
@@ -115,6 +120,85 @@ def push_payments(
         "rejected_wrong_store": rejected_wrong_store,
     }
 
+
+
+class PaymentCancelRequest(BaseModel):
+    payment_ids: List[str]
+
+@router.post("/payments/cancel")
+def cancel_payments(
+    payload: PaymentCancelRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    store_id: str = Depends(get_current_store_id),
+):
+    from app.models.invoice import Invoice, Payment, PaymentStatus
+    
+    accepted = []
+    
+    for pid in payload.payment_ids:
+        # Find the DebtPayment
+        dp = db.query(DebtPayment).filter(DebtPayment.id == pid, DebtPayment.store_id == store_id).first()
+        if not dp:
+            # Already cancelled or wrong store
+            accepted.append(pid)
+            continue
+            
+        # We DO NOT modify customer.current_debt here, because universal_sync.py 
+        # will receive the exact current_debt from the mobile app's explicit customer push.
+        # But we MUST reverse the invoice payments!
+        
+        # Find associated Payments
+        # Either matched by exact ID in notes, or if old payment, matched by exact time and amount
+        payments = db.query(Payment).filter(
+            Payment.store_id == store_id,
+            Payment.notes.like(f"%{pid}%")
+        ).all()
+        
+        # Fallback for old payments without ID in notes
+        if not payments:
+            # Try to find payments created within a small window of server_applied_at
+            from datetime import timedelta
+            window_start = dp.server_applied_at - timedelta(seconds=2)
+            window_end = dp.server_applied_at + timedelta(seconds=2)
+            
+            payments = db.query(Payment).filter(
+                Payment.store_id == store_id,
+                Payment.notes == "دفعة نقدية (أوفلاين)",
+                Payment.created_at >= window_start,
+                Payment.created_at <= window_end
+            ).all()
+            
+            # Since multiple payments might exist in that window, filter those that sum exactly to dp.amount?
+            # It's safer to just take payments that belong to this customer.
+            # But Payment only has invoice_id. Let's filter by customer via Invoice.
+            valid_payments = []
+            for p in payments:
+                inv = db.query(Invoice).filter(Invoice.id == p.invoice_id, Invoice.customer_id == dp.customer_id).first()
+                if inv:
+                    valid_payments.append(p)
+            payments = valid_payments
+            
+        # Reverse the payments
+        for p in payments:
+            inv = db.query(Invoice).filter(Invoice.id == p.invoice_id).first()
+            if inv:
+                inv.paid_amount = max(0.0, inv.paid_amount - p.amount)
+                inv.remaining_amount = inv.remaining_amount + p.amount
+                
+                if inv.remaining_amount > 0:
+                    if inv.paid_amount > 0:
+                        inv.payment_status = PaymentStatus.PARTIAL
+                    else:
+                        inv.payment_status = PaymentStatus.UNPAID
+            
+            db.delete(p)
+            
+        db.delete(dp)
+        accepted.append(pid)
+        
+    db.commit()
+    return {"accepted": accepted}
 
 @router.post("/debts/push")
 def push_debts(

@@ -10,7 +10,8 @@ import {
   getAllProducts,
   createLocalInvoice,
   updateProductStock,
-  updateSupplierBalance
+  updateSupplierBalance,
+  runInTransaction
 } from '../../src/db/database';
 import { runFullSync } from '../../src/db/syncManager';
 import type { Supplier, Product } from '../../src/types';
@@ -142,33 +143,35 @@ export default function PurchaseInvoiceScreen() {
         total: item.quantity * item.cost_price
       }));
 
-      createLocalInvoice({
-        invoice_number: null,
-        invoice_type: 'purchase',
-        status: 'completed',
-        payment_method: 'cash',
-        payment_status: remaining > 0 ? 'partial' : 'paid',
-        customer_id: null,
-        customer_name: null,
-        supplier_id: selectedSupplier.id,
-        subtotal: total,
-        discount_amount: 0,
-        tax_amount: 0,
-        total: total,
-        paid_amount: Number(paidAmount) || 0,
-        remaining_amount: remaining > 0 ? remaining : 0,
-        notes: notes || null,
-      }, itemsData);
+      runInTransaction(() => {
+        createLocalInvoice({
+          invoice_number: null,
+          invoice_type: 'purchase',
+          status: 'completed',
+          payment_method: 'cash',
+          payment_status: remaining > 0 ? 'partial' : 'paid',
+          customer_id: null,
+          customer_name: null,
+          supplier_id: selectedSupplier.id,
+          subtotal: total,
+          discount_amount: 0,
+          tax_amount: 0,
+          total: total,
+          paid_amount: Number(paidAmount) || 0,
+          remaining_amount: remaining > 0 ? remaining : 0,
+          notes: notes || null,
+        }, itemsData);
 
-      // زيادة المخزون بناءً على فاتورة المشتريات
-      for (const item of cart) {
-        updateProductStock(item.product.id, item.quantity);
-      }
+        // زيادة المخزون بناءً على فاتورة المشتريات
+        for (const item of cart) {
+          updateProductStock(item.product.id, item.quantity);
+        }
 
-      // زيادة رصيد المورد (الدين) إذا كان هناك متبقي
-      if (remaining > 0) {
-        updateSupplierBalance(selectedSupplier.id, remaining);
-      }
+        // زيادة رصيد المورد (الدين) إذا كان هناك متبقي
+        if (remaining > 0) {
+          updateSupplierBalance(selectedSupplier.id, remaining);
+        }
+      });
 
       runFullSync().catch(() => {});
 

@@ -5,7 +5,7 @@ import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, Badge, LoadingScreen } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius } from '../../src/types/theme';
-import { getProductById, upsertProduct, updateProductStock, LocalProduct } from '../../src/db/database';
+import { getProductById, upsertProduct, updateProductStock, manualUpdateProductStock, LocalProduct } from '../../src/db/database';
 import { runFullSync } from '../../src/db/syncManager';
 import { isBackendReachable } from '../../src/api/client';
 import type { Product } from '../../src/types';
@@ -61,7 +61,7 @@ export default function ProductDetailsScreen() {
     if (!product) return;
     setAdjusting(true);
     try {
-      updateProductStock(id, change);
+      manualUpdateProductStock(id, change);
       
       const isOnline = await isBackendReachable();
       if (isOnline) { runFullSync().catch(() => {}); }

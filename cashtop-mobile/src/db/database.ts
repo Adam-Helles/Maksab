@@ -1,8 +1,17 @@
 import * as SQLite from 'expo-sqlite';
 import * as Crypto from 'expo-crypto';
 
-// تهيئة قاعدة البيانات
 const db = SQLite.openDatabaseSync('cashtop.db');
+
+export function getDb(): SQLite.SQLiteDatabase {
+  return db;
+}
+
+export function executeVacuumInto(destinationPath: string): void {
+  // SQLite paths require single quotes to be escaped by doubling them
+  const safePath = destinationPath.replace(/'/g, "''");
+  db.runSync(`VACUUM INTO '${safePath}'`);
+}
 
 export type SyncStatus = 'synced' | 'pending_create' | 'pending_update' | 'pending_delete';
 
@@ -242,6 +251,11 @@ export function initDatabase() {
     );
 
     -- Indexes (For Performance with large databases)
+    CREATE INDEX IF NOT EXISTS idx_customers_sync ON customers(sync_status);
+    CREATE INDEX IF NOT EXISTS idx_products_sync ON products(sync_status);
+    CREATE INDEX IF NOT EXISTS idx_invoices_sync ON invoices(sync_status);
+    CREATE INDEX IF NOT EXISTS idx_debt_payments_sync ON debt_payments(sync_status);
+    CREATE INDEX IF NOT EXISTS idx_invoices_date ON invoices(created_at);
     CREATE INDEX IF NOT EXISTS idx_products_barcode_piece ON products(barcode_piece);
     CREATE INDEX IF NOT EXISTS idx_products_barcode_carton ON products(barcode_carton);
     CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
@@ -249,6 +263,9 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_invoices_created_at ON invoices(created_at);
     CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);
   `);
+
+  // Update schema version to allow future compatibility checks
+  db.runSync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('schema_version', '1')");
 
   // Migration from old tables
   try {
@@ -294,8 +311,69 @@ export function initDatabase() {
 }
 
 // ----------------------------------------------------------------------
-// CRUD Helpers - Customers
 // ----------------------------------------------------------------------
+// Voiding Helpers (Debts & Payments)
+// ----------------------------------------------------------------------
+
+export function voidManualDebt(invoiceId: string) {
+  runInTransaction(() => {
+    const inv = db.getFirstSync<LocalInvoice>('SELECT * FROM invoices WHERE id = ?', invoiceId);
+    if (!inv || inv.status === 'cancelled') return;
+
+    db.runSync(
+      "UPDATE invoices SET status = 'cancelled', sync_status = 'pending_update', updated_at = ? WHERE id = ?",
+      new Date().toISOString(), invoiceId
+    );
+
+    if (inv.payment_method === 'credit' && inv.customer_id) {
+       updateCustomerDebt(inv.customer_id, -inv.remaining_amount);
+       db.runSync("UPDATE customers SET sync_status = 'pending_update' WHERE id = ?", inv.customer_id);
+    }
+  });
+}
+
+export function voidDebtPayment(paymentId: string) {
+  runInTransaction(() => {
+    const p = db.getFirstSync<LocalDebtPayment>('SELECT * FROM debt_payments WHERE id = ?', paymentId);
+    if (!p || p.sync_status === 'pending_delete') return;
+
+    updateCustomerDebt(p.customer_id, p.amount);
+    db.runSync("UPDATE customers SET sync_status = 'pending_update' WHERE id = ?", p.customer_id);
+
+    if (p.sync_status === 'pending_create') {
+      db.runSync("DELETE FROM debt_payments WHERE id = ?", paymentId);
+    } else {
+      db.runSync("UPDATE debt_payments SET sync_status = 'pending_delete' WHERE id = ?", paymentId);
+    }
+  });
+}
+
+export function hardDeleteDebtPayment(paymentId: string) {
+  db.runSync("DELETE FROM debt_payments WHERE id = ?", paymentId);
+}
+
+export function getPendingDeleteDebtPayments(): LocalDebtPayment[] {
+  return db.getAllSync<LocalDebtPayment>("SELECT * FROM debt_payments WHERE sync_status = 'pending_delete'");
+}
+
+// ----------------------------------------------------------------------
+// CRUD Helpers - Suppliers
+// ----------------------------------------------------------------------
+
+export function softDeleteCustomer(customerId: string) {
+  runInTransaction(() => {
+    const c = db.getFirstSync<LocalCustomer>('SELECT * FROM customers WHERE id = ?', customerId);
+    if (!c) return;
+    if (c.current_debt > 0) {
+      throw new Error('لا يمكن حذف عميل عليه ديون غير مسددة');
+    }
+    
+    db.runSync(
+      "UPDATE customers SET is_active = 0, deleted_at = ?, sync_status = 'pending_update', updated_at = ? WHERE id = ?",
+      new Date().toISOString(), new Date().toISOString(), customerId
+    );
+  });
+}
 
 export function getAllCustomers(includeDeleted = false): LocalCustomer[] {
   let query = 'SELECT * FROM customers';
@@ -317,6 +395,7 @@ export function getCustomerById(id: string): LocalCustomer | null {
 }
 
 export function upsertCustomer(data: Partial<LocalCustomer> & { id: string }): void {
+  if (data.sync_status !== 'synced') requireActiveLicense();
   const existing = getCustomerById(data.id);
   const now = new Date().toISOString();
   
@@ -346,6 +425,7 @@ export function upsertCustomer(data: Partial<LocalCustomer> & { id: string }): v
 }
 
 export function createLocalCustomer(data: Omit<LocalCustomer, 'id' | 'created_at' | 'updated_at' | 'sync_status' | 'deleted_at'>): LocalCustomer {
+  requireActiveLicense();
   const id = Crypto.randomUUID();
   const now = new Date().toISOString();
   
@@ -363,6 +443,7 @@ export function createLocalCustomer(data: Omit<LocalCustomer, 'id' | 'created_at
 }
 
 export function updateCustomerDebt(customerId: string, debtDelta: number): void {
+  requireActiveLicense();
   db.runSync(
     'UPDATE customers SET current_debt = current_debt + ?, updated_at = ? WHERE id = ?',
     debtDelta, new Date().toISOString(), customerId
@@ -400,6 +481,7 @@ export function getProductByBarcode(barcode: string): LocalProduct | null {
 }
 
 export function upsertProduct(data: Partial<LocalProduct> & { id: string }): void {
+  if (data.sync_status !== 'synced') requireActiveLicense();
   const existing = getProductById(data.id);
   const now = new Date().toISOString();
   
@@ -433,9 +515,18 @@ export function upsertProduct(data: Partial<LocalProduct> & { id: string }): voi
 }
 
 export function updateProductStock(productId: string, delta: number): void {
+  requireActiveLicense();
   db.runSync(
     'UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?',
     delta, new Date().toISOString(), productId
+  );
+}
+
+export function manualUpdateProductStock(productId: string, delta: number): void {
+  requireActiveLicense();
+  db.runSync(
+    'UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ?, sync_status = ? WHERE id = ?',
+    delta, new Date().toISOString(), 'pending_update', productId
   );
 }
 
@@ -443,6 +534,8 @@ export function updateProductStock(productId: string, delta: number): void {
 // CRUD Helpers - Invoices
 // ----------------------------------------------------------------------
 
+// WARNING: Low-level Database Function.
+// MUST be called within `runInTransaction()` if used as part of a compound Business Transaction (like Sale or Purchase).
 export function createLocalInvoice(
   invoiceData: Omit<LocalInvoice, 'id' | 'created_at' | 'updated_at' | 'sync_status'> & { sync_status?: string },
   itemsData: Omit<LocalInvoiceItem, 'id' | 'invoice_id'>[]
@@ -509,6 +602,7 @@ export function getInvoiceWithItems(invoiceId: string): { invoice: LocalInvoice,
 }
 
 export function upsertInvoice(data: Partial<LocalInvoice> & { id: string }): void {
+  if (data.sync_status !== 'synced') requireActiveLicense();
   const existing = db.getFirstSync<LocalInvoice>('SELECT * FROM invoices WHERE id = ?', data.id);
   const now = new Date().toISOString();
   
@@ -577,6 +671,7 @@ export function getAllCategories(): LocalCategory[] {
 }
 
 export function upsertCategory(data: Partial<LocalCategory> & { id: string }): void {
+  if (data.sync_status !== 'synced') requireActiveLicense();
   const existing = db.getFirstSync<LocalCategory>('SELECT * FROM categories WHERE id = ?', data.id);
   const now = new Date().toISOString();
   if (existing) {
@@ -598,6 +693,7 @@ export function getSupplierById(id: string): LocalSupplier | null {
 
 
 export function upsertSupplier(data: Partial<LocalSupplier> & { id: string }): void {
+  if (data.sync_status !== 'synced') requireActiveLicense();
   const existing = db.getFirstSync<LocalSupplier>('SELECT * FROM suppliers WHERE id = ?', data.id);
   const now = new Date().toISOString();
   if (existing) {
@@ -622,6 +718,7 @@ export function upsertSupplier(data: Partial<LocalSupplier> & { id: string }): v
 }
 
 export function updateSupplierBalance(supplierId: string, balanceDelta: number): void {
+  requireActiveLicense();
   db.runSync(
     'UPDATE suppliers SET current_balance = current_balance + ?, updated_at = ?, sync_status = "pending_update" WHERE id = ?',
     balanceDelta, new Date().toISOString(), supplierId
@@ -633,6 +730,7 @@ export function updateSupplierBalance(supplierId: string, balanceDelta: number):
 // ----------------------------------------------------------------------
 
 export function createDebtPayment(data: Omit<LocalDebtPayment, 'id' | 'created_at' | 'sync_status'>): LocalDebtPayment {
+  requireActiveLicense();
   const id = Crypto.randomUUID();
   const now = new Date().toISOString();
   
@@ -655,6 +753,29 @@ export function getPendingDebtPayments(): LocalDebtPayment[] {
   return db.getAllSync<LocalDebtPayment>("SELECT * FROM debt_payments WHERE sync_status != 'synced'");
 }
 
+export function getDebtPaymentsForCustomer(customerId: string): LocalDebtPayment[] {
+  return db.getAllSync<LocalDebtPayment>('SELECT * FROM debt_payments WHERE customer_id = ? ORDER BY created_at DESC', customerId);
+}
+
+export function upsertDebtPayment(data: Partial<LocalDebtPayment> & { id: string }): void {
+  const existing = db.getFirstSync<LocalDebtPayment>('SELECT * FROM debt_payments WHERE id = ?', data.id);
+  const now = new Date().toISOString();
+  if (existing) {
+    db.runSync(
+      `UPDATE debt_payments SET customer_id = ?, amount = ?, method = ?, notes = ?, created_at = ?, sync_status = ? WHERE id = ?`,
+      data.customer_id || existing.customer_id, data.amount !== undefined ? data.amount : existing.amount,
+      data.method || existing.method, data.notes !== undefined ? data.notes : existing.notes,
+      data.created_at || existing.created_at, data.sync_status || existing.sync_status, data.id
+    );
+  } else {
+    db.runSync(
+      `INSERT INTO debt_payments (id, customer_id, amount, method, notes, created_at, sync_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      data.id, data.customer_id ?? '', data.amount ?? 0, data.method || 'cash', data.notes || null, data.created_at || now, data.sync_status || 'synced'
+    );
+  }
+}
+
 // ----------------------------------------------------------------------
 // Sync Meta
 // ----------------------------------------------------------------------
@@ -666,6 +787,114 @@ export function getLastSyncTime(): string | null {
 
 export function setLastSyncTime(time: string): void {
   db.runSync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('last_sync', ?)", time);
+}
+
+export function getStoreId(): string | null {
+  const row = db.getFirstSync<{value: string}>("SELECT value FROM sync_meta WHERE key = 'store_id'");
+  return row ? row.value : null;
+}
+
+export function setStoreId(storeId: string): void {
+  db.runSync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('store_id', ?)", storeId);
+}
+
+export function hasPendingUnsyncedData(): boolean {
+  try {
+    const pCust = db.getFirstSync<{count: number}>("SELECT count(*) as count FROM customers WHERE sync_status != 'synced'");
+    const pProd = db.getFirstSync<{count: number}>("SELECT count(*) as count FROM products WHERE sync_status != 'synced'");
+    const pInv = db.getFirstSync<{count: number}>("SELECT count(*) as count FROM invoices WHERE sync_status != 'synced'");
+    const pDebt = db.getFirstSync<{count: number}>("SELECT count(*) as count FROM debt_payments WHERE sync_status != 'synced'");
+    
+    return (pCust?.count || 0) > 0 || 
+           (pProd?.count || 0) > 0 || 
+           (pInv?.count || 0) > 0 || 
+           (pDebt?.count || 0) > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+export function getUnsyncedRecordsCount(): number {
+  try {
+    const pCust = db.getFirstSync<{count: number}>("SELECT count(*) as count FROM customers WHERE sync_status != 'synced'");
+    const pProd = db.getFirstSync<{count: number}>("SELECT count(*) as count FROM products WHERE sync_status != 'synced'");
+    const pInv = db.getFirstSync<{count: number}>("SELECT count(*) as count FROM invoices WHERE sync_status != 'synced'");
+    const pDebt = db.getFirstSync<{count: number}>("SELECT count(*) as count FROM debt_payments WHERE sync_status != 'synced'");
+    const pSupp = db.getFirstSync<{count: number}>("SELECT count(*) as count FROM suppliers WHERE sync_status != 'synced'");
+    const pCat = db.getFirstSync<{count: number}>("SELECT count(*) as count FROM categories WHERE sync_status != 'synced'");
+    
+    return (pCust?.count || 0) + 
+           (pProd?.count || 0) + 
+           (pInv?.count || 0) + 
+           (pDebt?.count || 0) +
+           (pSupp?.count || 0) +
+           (pCat?.count || 0);
+  } catch (e) {
+    return 0;
+  }
+}
+
+export function updateLicenseMeta(expiresAt: string, serverTime: string, deviceTime: number): void {
+  db.runSync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('license_expires_at', ?)", expiresAt);
+  db.runSync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('license_last_server_time', ?)", serverTime);
+  db.runSync("INSERT OR REPLACE INTO sync_meta (key, value) VALUES ('license_last_device_time', ?)", deviceTime.toString());
+}
+
+export function getLicenseMeta(): { expiresAt: Date | null, lastServerTime: Date | null, lastDeviceTime: number | null } {
+  try {
+    const exp = db.getFirstSync<{value: string}>("SELECT value FROM sync_meta WHERE key = 'license_expires_at'");
+    const srv = db.getFirstSync<{value: string}>("SELECT value FROM sync_meta WHERE key = 'license_last_server_time'");
+    const dev = db.getFirstSync<{value: string}>("SELECT value FROM sync_meta WHERE key = 'license_last_device_time'");
+    
+    return {
+      expiresAt: exp?.value ? new Date(exp.value) : null,
+      lastServerTime: srv?.value ? new Date(srv.value) : null,
+      lastDeviceTime: dev?.value ? parseInt(dev.value, 10) : null
+    };
+  } catch (e) {
+    return { expiresAt: null, lastServerTime: null, lastDeviceTime: null };
+  }
+}
+
+export function requireActiveLicense(): void {
+  const meta = getLicenseMeta();
+  if (!meta.expiresAt || !meta.lastServerTime || !meta.lastDeviceTime) return; // Not initialized yet
+
+  const now = Date.now();
+  
+  // 1. Clock Rollback Check
+  // We compare the elapsed time on the device vs the server's last known time.
+  // Actually, a simpler robust check: if current device time is LESS than the device time when we last checked, clock was rolled back!
+  if (now < meta.lastDeviceTime) {
+    throw new Error('LICENSE_TAMPERED: الرجاء ضبط وقت وتاريخ الهاتف بشكل صحيح');
+  }
+
+  // 2. Expiry Check
+  // We calculate the true current time by adding the elapsed device time to the last known server time.
+  // This prevents the user from simply changing the time forward/backward slightly.
+  // true_now = server_time + (current_device_time - last_device_time)
+  const elapsedSinceCheck = now - meta.lastDeviceTime;
+  const trueNowMs = meta.lastServerTime.getTime() + elapsedSinceCheck;
+  
+  if (trueNowMs > meta.expiresAt.getTime()) {
+    throw new Error('LICENSE_EXPIRED: انتهى الاشتراك، الرجاء إدخال مفتاح التفعيل للاستمرار في العمليات التجارية');
+  }
+}
+
+export function clearDatabase(): void {
+  db.runSync(`
+    PRAGMA foreign_keys = OFF;
+    DROP TABLE IF EXISTS customers;
+    DROP TABLE IF EXISTS products;
+    DROP TABLE IF EXISTS categories;
+    DROP TABLE IF EXISTS suppliers;
+    DROP TABLE IF EXISTS invoice_items;
+    DROP TABLE IF EXISTS invoices;
+    DROP TABLE IF EXISTS debt_payments;
+    DROP TABLE IF EXISTS sync_meta;
+    PRAGMA foreign_keys = ON;
+  `);
+  initDatabase();
 }
 
 // ----------------------------------------------------------------------

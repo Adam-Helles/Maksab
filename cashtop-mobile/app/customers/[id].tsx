@@ -12,11 +12,13 @@ import {
   getPendingDebtPayments,
   createDebtPayment,
   createLocalInvoice,
-  updateCustomerDebt,
+  updateCustomerDebt, voidManualDebt, voidDebtPayment, softDeleteCustomer,
   LocalCustomer,
   LocalInvoice,
   getInvoicesForCustomer,
-  runInTransaction
+  getDebtPaymentsForCustomer,
+  runInTransaction,
+  LocalDebtPayment
 } from '../../src/db/database';
 import { runFullSync } from '../../src/db/syncManager';
 import { isBackendReachable } from '../../src/api/client';
@@ -27,6 +29,7 @@ export default function CustomerStatementScreen() {
 
   const [customer, setCustomer] = useState<LocalCustomer | null>(null);
   const [invoices, setInvoices] = useState<LocalInvoice[]>([]);
+  const [payments, setPayments] = useState<LocalDebtPayment[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -54,6 +57,9 @@ export default function CustomerStatementScreen() {
     // 2. اقرأ جميع العمليات (فواتير، دفعات، ديون) من SQLite
     const localInvoices = getInvoicesForCustomer(id);
     setInvoices(localInvoices);
+    
+    const localPayments = getDebtPaymentsForCustomer(id);
+    setPayments(localPayments);
 
     setLoading(false);
     setRefreshing(false);
@@ -170,6 +176,22 @@ export default function CustomerStatementScreen() {
     }
   };
 
+  const handleDeleteCustomer = () => {
+    Alert.alert('حذف العميل', 'هل أنت متأكد من حذف هذا العميل؟', [
+      { text: 'تراجع', style: 'cancel' },
+      { text: 'نعم، حذف', style: 'destructive', onPress: () => {
+          try {
+            softDeleteCustomer(id);
+            Alert.alert('تم الحذف', 'تم حذف العميل بنجاح');
+            router.back();
+            isBackendReachable().then(online => { if (online) runFullSync().catch(() => {}); });
+          } catch (e: any) {
+            Alert.alert('عذراً', e.message);
+          }
+      }}
+    ]);
+  };
+
   const submitEdit = () => {
     if (!customer) return;
     if (!editName.trim()) {
@@ -200,8 +222,11 @@ export default function CustomerStatementScreen() {
     );
   }
 
-  // فرز الفواتير تنازلياً
-  const sortedInvoices = [...invoices].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  // دمج الفواتير والدفعات معاً في سجل واحد
+  const combinedHistory = [
+    ...invoices.filter(i => i.status !== 'cancelled').map(inv => ({ type: 'invoice' as const, data: inv, date: new Date(inv.created_at).getTime() })),
+    ...payments.filter(p => p.sync_status !== 'pending_delete').map(pay => ({ type: 'payment' as const, data: pay, date: new Date(pay.created_at).getTime() }))
+  ].sort((a, b) => b.date - a.date);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }}>
@@ -270,37 +295,91 @@ export default function CustomerStatementScreen() {
             كشف الحساب والسجل (محلي)
           </Text>
 
-          {sortedInvoices.length === 0 ? (
+          {combinedHistory.length === 0 ? (
             <View style={{ backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.xl, alignItems: 'center', marginTop: Spacing.lg }}>
               <Ionicons name="document-text-outline" size={48} color={Colors.gray300} />
               <Text style={{ color: Colors.gray500, marginTop: 10, fontWeight: '600' }}>لا توجد فواتير أو ديون سابقة</Text>
             </View>
           ) : (
             <View style={{ gap: Spacing.sm }}>
-              {sortedInvoices.map(inv => (
-                <TouchableOpacity
-                  key={inv.id}
-                  onPress={() => router.push({ pathname: '/invoices/[id]', params: { id: inv.id } })}
-                  style={{ backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.md, flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', ...Shadow.sm }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontWeight: '700', color: Colors.gray800, textAlign: 'right' }}>
-                      {inv.notes || (inv.payment_method === 'credit' ? 'بيع آجل' : 'فاتورة مبيعات')}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: Colors.gray500, textAlign: 'right', marginTop: 2 }}>
-                      {new Date(inv.created_at).toLocaleDateString('ar')} • {inv.invoice_number || 'معلّقة'}
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-start' }}>
-                    <Text style={{ fontWeight: '800', fontSize: 16, color: inv.payment_method === 'credit' && inv.remaining_amount > 0 ? Colors.danger : Colors.gray800 }}>
-                      {inv.total.toFixed(2)} ₪
-                    </Text>
-                    {inv.sync_status !== 'synced' && (
-                      <Badge label="تنتظر المزامنة" color="blue" />
-                    )}
-                  </View>
-                </TouchableOpacity>
-              ))}
+              {combinedHistory.map((item, idx) => {
+                if (item.type === 'invoice') {
+                  const inv = item.data;
+                  return (
+                    
+                    <TouchableOpacity
+                      key={`inv-${inv.id}`}
+                      onLongPress={() => {
+                        Alert.alert('إلغاء', 'هل تريد إلغاء هذه العملية وإرجاع الرصيد؟', [
+                          { text: 'تراجع', style: 'cancel' },
+                          { text: 'نعم، إلغاء', style: 'destructive', onPress: () => {
+                              voidManualDebt(inv.id);
+                              loadFromLocal();
+                              isBackendReachable().then(online => { if (online) runFullSync().catch(() => {}); });
+                          }}
+                        ]);
+                      }}
+                      onPress={() => router.push({ pathname: '/invoices/[id]', params: { id: inv.id } })}
+                      style={{ backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.md, flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', ...Shadow.sm }}
+                    >
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontWeight: '700', color: Colors.gray800, textAlign: 'right' }}>
+                          {inv.notes || (inv.payment_method === 'credit' ? 'بيع آجل' : 'فاتورة مبيعات')}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: Colors.gray500, textAlign: 'right', marginTop: 2 }}>
+                          {new Date(inv.created_at).toLocaleDateString('ar')} • {inv.invoice_number || 'معلّقة'}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-start' }}>
+                        <Text style={{ fontWeight: '800', fontSize: 16, color: inv.payment_method === 'credit' && inv.remaining_amount > 0 ? Colors.danger : Colors.gray800 }}>
+                          {inv.total.toFixed(2)} ₪
+                        </Text>
+                        {inv.sync_status !== 'synced' && (
+                          <Badge label="تنتظر المزامنة" color="blue" />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                } else {
+                  const pay = item.data;
+                  return (
+                    
+                    <TouchableOpacity
+                      key={`pay-${pay.id}`}
+                      onLongPress={() => {
+                        Alert.alert('إلغاء الدفعة', 'هل تريد إلغاء هذه الدفعة وإرجاع الدين للعميل؟', [
+                          { text: 'تراجع', style: 'cancel' },
+                          { text: 'نعم، إلغاء', style: 'destructive', onPress: () => {
+                              voidDebtPayment(pay.id);
+                              loadFromLocal();
+                              isBackendReachable().then(online => { if (online) runFullSync().catch(() => {}); });
+                          }}
+                        ]);
+                      }}
+                      style={{ backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.md, flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', ...Shadow.sm }}
+                    >
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontWeight: '700', color: Colors.success, textAlign: 'right' }}>
+                          دفعة سداد ({pay.notes || (pay.method === 'cash' ? 'نقدي' : pay.method)})
+                        </Text>
+                        <Text style={{ fontSize: 12, color: Colors.gray500, textAlign: 'right', marginTop: 2 }}>
+                          {new Date(pay.created_at).toLocaleDateString('ar')} • {new Date(pay.created_at).toLocaleTimeString('ar', {hour: '2-digit', minute:'2-digit'})}
+                        </Text>
+                      </View>
+                      <View style={{ alignItems: 'flex-start' }}>
+                        <Text style={{ fontWeight: '800', fontSize: 16, color: Colors.success }}>
+                          {pay.amount.toFixed(2)} ₪
+                        </Text>
+                        {pay.sync_status !== 'synced' && (
+                          <Badge label="تنتظر المزامنة" color="blue" />
+                        )}
+                      </View>
+                    </TouchableOpacity>
+                  );
+                }
+              })}
             </View>
           )}
         </View>
@@ -347,6 +426,9 @@ export default function CustomerStatementScreen() {
               <Button title="حفظ التعديلات" onPress={submitEdit} style={{ flex: 1 }} />
               <Button title="إلغاء" variant="secondary" onPress={() => setShowEdit(false)} style={{ flex: 1 }} />
             </View>
+            <TouchableOpacity onPress={handleDeleteCustomer} style={{ marginTop: Spacing.lg, alignItems: 'center' }}>
+              <Text style={{ color: Colors.danger, fontWeight: '700' }}>حذف العميل</Text>
+            </TouchableOpacity>
           </View>
         </View>
       )}
