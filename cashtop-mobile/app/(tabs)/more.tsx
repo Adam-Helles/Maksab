@@ -1,11 +1,14 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Alert, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore, useIsAdmin } from '../../src/store/authStore';
-import { Card } from '../../src/components/ui';
+import { Card, StatCard } from '../../src/components/ui';
 import { Colors, Spacing, Fonts, Radius } from '../../src/types/theme';
+import { getDashboardStats } from '../../src/db/database';
+import { isBackendReachable } from '../../src/api/client';
+import { runFullSync } from '../../src/db/syncManager';
 
 
 interface MenuItemProps {
@@ -37,6 +40,34 @@ export default function MoreScreen() {
   const { user, logout } = useAuthStore();
   const isAdmin = useIsAdmin();
   const router = useRouter();
+  const [data, setData] = useState<any>(null);
+  const [isOnline, setIsOnline] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadStats = useCallback(() => {
+    try {
+      const stats = getDashboardStats();
+      setData(stats.summary);
+    } catch (e) {
+      console.log('Error loading stats:', e);
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    loadStats();
+    isBackendReachable().then(setIsOnline).catch(() => {});
+  }, [loadStats]));
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    const online = await isBackendReachable();
+    setIsOnline(online);
+    if (online) {
+      await runFullSync().catch(() => {});
+    }
+    loadStats();
+    setRefreshing(false);
+  };
 
   const handleLogout = () => {
     Alert.alert('تسجيل الخروج', 'هل تريد تسجيل الخروج؟', [
@@ -45,9 +76,14 @@ export default function MoreScreen() {
     ]);
   };
 
+  const fmt = (n: number) => n?.toLocaleString('ar-SA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) ?? '0.00';
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }}>
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Colors.primary} />}
+      >
         {/* ── بيانات المستخدم ─────────────────────────── */}
         <View style={styles.profileSection}>
           <View style={styles.avatar}>
@@ -55,23 +91,70 @@ export default function MoreScreen() {
               {user?.full_name?.charAt(0) ?? '?'}
             </Text>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
+          <View style={{ alignItems: 'flex-end', flex: 1 }}>
             <Text style={styles.profileName}>{user?.full_name}</Text>
             <Text style={styles.profileRole}>
               {{ admin: 'مدير النظام', manager: 'مدير', cashier: 'كاشير' }[user?.role ?? 'cashier']}
             </Text>
           </View>
+          <View style={{
+            flexDirection: 'row-reverse', alignItems: 'center',
+            backgroundColor: isOnline ? 'rgba(76, 175, 80, 0.2)' : 'rgba(244, 67, 54, 0.2)',
+            paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
+          }}>
+            <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: isOnline ? '#4CAF50' : '#F44336', marginLeft: 6 }} />
+            <Text style={{ color: 'white', fontSize: 11, fontWeight: '600' }}>
+              {isOnline ? 'متصل' : 'أوفلاين'}
+            </Text>
+          </View>
         </View>
 
-        {/* ── القسم الرئيسي ──────────────────────────── */}
+        {/* ── إحصائيات سريعة ─────────────────────────── */}
+        {data && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>إحصائيات اليوم</Text>
+            <View style={{ flexDirection: 'row-reverse', gap: Spacing.sm }}>
+              <StatCard
+                title="المبيعات"
+                value={fmt(data?.today?.revenue ?? 0)}
+                subtitle="₪"
+                color={Colors.primary}
+                style={{ flex: 1 }}
+              />
+              <StatCard
+                title="الربح"
+                value={fmt(data?.today?.profit ?? 0)}
+                subtitle={`${data?.today?.margin?.toFixed(0) ?? 0}% هامش`}
+                color={Colors.success}
+                style={{ flex: 1 }}
+              />
+            </View>
+
+            <View style={{ flexDirection: 'row-reverse', gap: Spacing.sm, marginTop: Spacing.sm }}>
+              <StatCard
+                title="ديون العملاء"
+                value={fmt(data?.finance?.customers_debt ?? 0)}
+                subtitle="₪ مستحقة لك"
+                color={Colors.success}
+                style={{ flex: 1 }}
+              />
+              <StatCard
+                title="ديون الموردين"
+                value={fmt(data?.finance?.suppliers_debt ?? 0)}
+                subtitle="₪ مستحقة عليك"
+                color={Colors.danger}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        )}
+
+        {/* ── الإدارة ──────────────────────────────────── */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>الإدارة</Text>
           <Card padding={0}>
-            <MenuItem icon="👤" label="العملاء" subtitle="إدارة العملاء والديون"
-              onPress={() => router.push('/customers')} />
-            <View style={styles.divider} />
-            <MenuItem icon="🏭" label="الموردون" subtitle="إدارة الموردين والمشتريات"
-              onPress={() => router.push('/suppliers')} />
+            <MenuItem icon="📦" label="المنتجات" subtitle="إدارة المنتجات والمخزون"
+              onPress={() => router.push('/(tabs)/products')} />
             <View style={styles.divider} />
             <MenuItem icon="💰" label="المالية" subtitle="الديون والتقارير المالية"
               onPress={() => router.push('/finance')} />

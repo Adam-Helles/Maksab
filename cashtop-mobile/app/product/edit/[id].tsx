@@ -34,7 +34,6 @@ function localToProduct(p: LocalProduct): Product {
 export default function EditProductScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const productId = Number(id);
 
   const [initialValues, setInitialValues] = useState<ProductFormValues | null>(null);
 
@@ -76,15 +75,16 @@ export default function EditProductScreen() {
             upsertProduct({
               ...local,
               name: payload.name,
-              name_ar: payload.name_ar,
-              barcode_piece: payload.barcode_piece,
-              barcode_carton: payload.barcode_carton,
+              name_ar: payload.name_ar || null,
+              barcode_piece: payload.barcode_piece || null,
+              barcode_carton: payload.barcode_carton || null,
               retail_price: payload.retail_price || 0,
               carton_price: payload.carton_price || 0,
               cost_price: payload.cost_price || 0,
               tax_rate: payload.tax_rate || 0,
               pieces_per_carton: payload.pieces_per_carton || 0,
-              is_active: payload.is_active ? 1 : 0,
+              category_id: payload.category_id || null,
+              supplier_id: payload.supplier_id || null,
               sync_status: 'pending_update',
             });
           }

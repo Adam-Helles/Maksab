@@ -20,17 +20,13 @@
       }
     },
     "android": {
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#1E3A5F"
       },
       "package": "com.maksab.app",
       "permissions": [
-        "CAMERA",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "CAMERA",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ]
@@ -44,7 +40,8 @@
           "cameraPermission": "نستخدم الكاميرا لمسح الباركود"
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-document-picker"
     ],
     "experiments": {
       "typedRoutes": true

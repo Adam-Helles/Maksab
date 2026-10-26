@@ -9,7 +9,7 @@ import { reportsApi } from '../../src/api';
 import { getInvoiceWithItems } from '../../src/db/database';
 import { isBackendReachable } from '../../src/api/client';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { format } from 'date-fns';
 
 export default function InvoiceDetailsScreen() {

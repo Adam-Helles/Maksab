@@ -1,17 +1,22 @@
 import os
 import psycopg2
-from dotenv import load_dotenv
+import yaml
 
-load_dotenv()
-db_url = os.getenv("DATABASE_URL")
+with open("c:/my_work/cashtop/render.yaml") as f:
+    cfg = yaml.safe_load(f)
+db_url = next(ev["value"] for ev in cfg["services"][0]["envVars"] if ev["key"] == "DATABASE_URL")
 if not db_url:
-    print("No DATABASE_URL found in .env")
+    print("No DATABASE_URL found in render.yaml")
     exit(1)
+
+if db_url.startswith("postgresql+psycopg2://"):
+    db_url = db_url.replace("postgresql+psycopg2://", "postgresql://")
+
 
 tables = [
     "users", "stores", "categories", "suppliers", "customers", 
     "products", "product_batches", "invoices", "invoice_items", 
-    "payments", "stock_movements", "refresh_tokens", "licenses", "employees"
+    "payments", "stock_movements", "refresh_tokens", "license_keys", "employees"
 ]
 
 def migrate():

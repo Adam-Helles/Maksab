@@ -1,16 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, KeyboardAvoidingView,
-  Platform, ScrollView, Pressable, Modal
+  Platform, ScrollView, Pressable, Modal, Alert
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../../src/store/authStore';
 import { Button, Input } from '../../src/components/ui';
 import { Colors, Spacing, Radius, Fonts } from '../../src/types/theme';
-import { setServerIp, BASE_URL } from '../../src/api/client';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -18,15 +16,9 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPass,  setShowPass] = useState(false);
   const [errors,    setErrors]   = useState<{ username?: string; password?: string }>({});
+  const [transferring, setTransferring] = useState(false);
 
-  const [showConfig, setShowConfig] = useState(false);
-  const [serverIp, setServerIpInput] = useState('');
-
-  const { login, isLoading, error, clearError } = useAuthStore();
-
-  useEffect(() => {
-    // تم إلغاء التحكم بالـ IP لأن الرابط الآن ثابت
-  }, []);
+  const { login, transferDevice, isLoading, error, clearError, deviceMismatch, clearDeviceMismatch } = useAuthStore();
 
   const validate = () => {
     const e: typeof errors = {};
@@ -48,7 +40,20 @@ export default function LoginScreen() {
     }
   };
 
-  // تم إزالة وظيفة حفظ الـ IP
+  const handleTransferDevice = async () => {
+    setTransferring(true);
+    try {
+      await transferDevice(username.trim().toLowerCase(), password);
+      Alert.alert(
+        'تم نقل الجهاز بنجاح ✅',
+        'سيتم تحميل بياناتك من السيرفر تلقائياً.',
+      );
+    } catch (e: any) {
+      // الخطأ يُعرض من الـ store
+    } finally {
+      setTransferring(false);
+    }
+  };
 
   return (
     <LinearGradient
@@ -82,7 +87,7 @@ export default function LoginScreen() {
             <Text style={styles.cardTitle}>تسجيل الدخول</Text>
 
             {/* رسالة الخطأ */}
-            {error && (
+            {error && !deviceMismatch && (
               <View style={styles.errorBox}>
                 <Ionicons name="alert-circle" size={18} color={Colors.danger} />
                 <Text style={styles.errorText}>{error}</Text>
@@ -125,7 +130,7 @@ export default function LoginScreen() {
             <Button
               title="دخول"
               onPress={handleLogin}
-              loading={isLoading}
+              loading={isLoading && !transferring}
               fullWidth
               size="lg"
               style={{ marginTop: Spacing.sm }}
@@ -138,9 +143,62 @@ export default function LoginScreen() {
           </View>
 
           {/* ── Footer ──────────────────────────────────── */}
-          <Text style={styles.footer}>v1.0.0 © 2025 Maksab</Text>
+          <Text style={styles.footer}>v1.0.1 © 2025 Maksab</Text>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* ── Device Mismatch Modal ──────────────────────── */}
+      <Modal
+        visible={deviceMismatch}
+        transparent
+        animationType="fade"
+        onRequestClose={clearDeviceMismatch}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={{ alignItems: 'center', marginBottom: Spacing.lg }}>
+              <View style={{
+                width: 64, height: 64, borderRadius: 32,
+                backgroundColor: '#FFF3E0', alignItems: 'center', justifyContent: 'center',
+                marginBottom: Spacing.md,
+              }}>
+                <Ionicons name="phone-portrait-outline" size={32} color="#F57C00" />
+              </View>
+              <Text style={styles.modalTitle}>جهاز جديد!</Text>
+              <Text style={styles.modalSub}>
+                هذا الاشتراك مرتبط بجهاز آخر. هل تريد نقل الحساب لهذا الجهاز؟
+              </Text>
+              <Text style={{ fontSize: 12, color: Colors.danger, textAlign: 'center', marginTop: 4 }}>
+                ⚠️ سيتم قطع الاتصال عن الجهاز السابق فوراً
+              </Text>
+            </View>
+
+            {error && deviceMismatch && (
+              <View style={[styles.errorBox, { marginBottom: Spacing.md }]}>
+                <Ionicons name="alert-circle" size={16} color={Colors.danger} />
+                <Text style={[styles.errorText, { fontSize: 12 }]}>{error}</Text>
+              </View>
+            )}
+
+            <Button
+              title="نقل الحساب لهذا الجهاز"
+              onPress={handleTransferDevice}
+              loading={transferring}
+              fullWidth
+              size="lg"
+              style={{ marginBottom: Spacing.sm }}
+            />
+
+            <Button
+              title="إلغاء"
+              onPress={clearDeviceMismatch}
+              variant="secondary"
+              fullWidth
+              size="lg"
+            />
+          </View>
+        </View>
+      </Modal>
 
     </LinearGradient>
   );
@@ -189,6 +247,6 @@ const styles = StyleSheet.create({
   footer:       { textAlign: 'center', color: 'rgba(255,255,255,0.4)', marginTop: Spacing.xl, fontSize: 12 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', padding: Spacing.xl },
   modalContent: { backgroundColor: Colors.white, borderRadius: Radius.xl, padding: Spacing.xl },
-  modalTitle:   { fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.gray800, textAlign: 'right', marginBottom: 4 },
-  modalSub:     { fontSize: 13, color: Colors.gray500, textAlign: 'right', marginBottom: Spacing.lg },
+  modalTitle:   { fontSize: Fonts.sizes.lg, fontWeight: '800', color: Colors.gray800, textAlign: 'center', marginBottom: 4 },
+  modalSub:     { fontSize: 13, color: Colors.gray500, textAlign: 'center', marginBottom: Spacing.lg },
 });

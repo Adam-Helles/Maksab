@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { getDb, getStoreId } from './database';
 import { runFullSync } from './syncManager';
 
@@ -30,7 +30,11 @@ export async function restoreLocalBackup(backupPath: string): Promise<void> {
     
     await FileSystem.copyAsync({ from: backupPath, to: tempRestorePath });
 
-    const safePath = tempRestorePath.replace(/'/g, "''");
+    // SQLite's ATTACH DATABASE rejects file:// URIs — needs plain filesystem path.
+    const plainTempPath = tempRestorePath.startsWith('file://')
+      ? tempRestorePath.slice('file://'.length)
+      : tempRestorePath;
+    const safePath = plainTempPath.replace(/'/g, "''");
 
     // ATTACH
     db.execSync(`ATTACH DATABASE '${safePath}' AS backup_db;`);

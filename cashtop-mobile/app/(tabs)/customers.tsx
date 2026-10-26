@@ -1,0 +1,164 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, FlatList, ActivityIndicator, RefreshControl } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { Input, Badge, EmptyState } from '../../src/components/ui';
+import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
+import type { Customer } from '../../src/types';
+import { getAllCustomers, searchCustomers, LocalCustomer } from '../../src/db/database';
+import { runFullSync } from '../../src/db/syncManager';
+
+function toCustomer(c: LocalCustomer): Customer {
+  return {
+    id: c.id,
+    name: c.name,
+    phone: c.phone || undefined,
+    phone2: c.phone2 || undefined,
+    email: c.email || undefined,
+    address: c.address || undefined,
+    credit_limit: c.credit_limit,
+    current_debt: c.current_debt,
+    available_credit: c.credit_limit === 0 ? -1 : Math.max(0, c.credit_limit - c.current_debt),
+    can_buy_on_credit: c.credit_limit === 0 || c.current_debt < c.credit_limit,
+    loyalty_points: 0,
+    is_active: c.is_active === 1,
+    created_at: c.created_at,
+  };
+}
+
+export default function CustomersTab() {
+  const router = useRouter();
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [search, setSearch] = useState('');
+  const [debtOnly, setDebtOnly] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadFromLocal = useCallback(() => {
+    let local: LocalCustomer[];
+    if (search.trim()) {
+      local = searchCustomers(search.trim(), 500);
+    } else {
+      local = getAllCustomers();
+    }
+    if (debtOnly) local = local.filter(c => c.current_debt > 0);
+    setCustomers(local.map(toCustomer));
+    setLoading(false);
+    setRefreshing(false);
+  }, [search, debtOnly]);
+
+  useFocusEffect(useCallback(() => {
+    loadFromLocal();
+  }, [loadFromLocal]));
+
+  useEffect(() => {
+    runFullSync().then(() => loadFromLocal()).catch(() => {});
+  }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try { await runFullSync(); } catch {}
+    loadFromLocal();
+  };
+
+  const totalDebt = customers.reduce((s, c) => s + c.current_debt, 0);
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: Colors.background }} edges={['top']}>
+      <View style={{ padding: Spacing.lg, borderBottomWidth: 1, borderBottomColor: Colors.border,
+                     backgroundColor: Colors.white }}>
+        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between',
+                       marginBottom: Spacing.md }}>
+          <Text style={{ fontSize: Fonts.sizes.xl, fontWeight: '800', color: Colors.primary }}>
+            👥 العملاء
+          </Text>
+        </View>
+
+        <Input
+          placeholder="ابحث بالاسم أو الهاتف..."
+          value={search}
+          onChangeText={setSearch}
+          leftIcon={<Ionicons name="search" size={18} color={Colors.gray400} />}
+          containerStyle={{ marginBottom: Spacing.sm }}
+        />
+
+        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between' }}>
+          <TouchableOpacity
+            onPress={() => setDebtOnly(v => !v)}
+            style={{
+              flexDirection: 'row-reverse', alignItems: 'center', gap: 6,
+              paddingHorizontal: 12, paddingVertical: 6, borderRadius: Radius.full,
+              backgroundColor: debtOnly ? Colors.dangerLight : Colors.gray50,
+            }}
+          >
+            <Ionicons name="alert-circle" size={16} color={debtOnly ? Colors.danger : Colors.gray400} />
+            <Text style={{ fontSize: 12, fontWeight: '600', color: debtOnly ? Colors.danger : Colors.gray500 }}>
+              عليهم دين فقط
+            </Text>
+          </TouchableOpacity>
+
+          {totalDebt > 0 && (
+            <Text style={{ fontSize: 13, fontWeight: '700', color: Colors.danger }}>
+              إجمالي الديون: {totalDebt.toFixed(2)} ₪
+            </Text>
+          )}
+        </View>
+      </View>
+
+      {loading ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color={Colors.primary} />
+        </View>
+      ) : customers.length === 0 ? (
+        <EmptyState icon="👥" title="لا يوجد عملاء" subtitle={search ? 'جرّب كلمة بحث مختلفة' : 'اضغط + لإضافة أول عميل'} />
+      ) : (
+        <FlatList
+          data={customers}
+          keyExtractor={c => c.id}
+          contentContainerStyle={{ padding: Spacing.lg, paddingBottom: 100, gap: Spacing.sm }}
+          refreshControl={<RefreshControl refreshing={refreshing}
+                             onRefresh={onRefresh} colors={[Colors.primary]} />}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              onPress={() => router.push({ pathname: '/customers/[id]', params: { id: item.id } })}
+              style={{
+                backgroundColor: Colors.white, borderRadius: Radius.lg, padding: Spacing.md,
+                flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between',
+                ...Shadow.sm,
+              }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontWeight: '700', color: Colors.gray800, textAlign: 'right' }}>{item.name}</Text>
+                {!!item.phone && (
+                  <Text style={{ fontSize: 12, color: Colors.gray400, textAlign: 'right', marginTop: 2 }}>
+                    {item.phone}
+                  </Text>
+                )}
+              </View>
+              {item.current_debt > 0 ? (
+                <Badge label={`دين: ${item.current_debt.toFixed(0)} ₪`} color="red" />
+              ) : (
+                <Badge label="لا يوجد دين" color="green" />
+              )}
+            </TouchableOpacity>
+          )}
+        />
+      )}
+
+      {/* FAB */}
+      <TouchableOpacity
+        onPress={() => router.push('/customers/new')}
+        style={{
+          position: 'absolute', bottom: 24, left: 24,
+          width: 56, height: 56, borderRadius: 28,
+          backgroundColor: Colors.accent,
+          alignItems: 'center', justifyContent: 'center',
+          ...Shadow.lg,
+        }}
+      >
+        <Ionicons name="add" size={30} color={Colors.white} />
+      </TouchableOpacity>
+    </SafeAreaView>
+  );
+}

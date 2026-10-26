@@ -33,7 +33,6 @@ function localToProduct(p: LocalProduct): Product {
 export default function ProductDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const productId = Number(id);
 
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,7 +52,7 @@ export default function ProductDetailsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [productId]);
+  }, [id]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -158,7 +157,7 @@ export default function ProductDetailsScreen() {
         <SectionTitle text="المخزون" />
         <Card style={{ marginBottom: Spacing.lg }}>
           <Row label="الكمية الحالية" value={`${product.stock_quantity} ${unitLabel(product.base_unit)}`} bold />
-          <Row label="بالكراتين" value={`${product.stock_in_cartons}`} />
+          <Row label="بالكراتين" value={`${product.stock_in_cartons.toFixed(1)}`} />
           <Row label="حد التنبيه" value={`${product.min_stock_alert}`} last />
 
           <View style={{ flexDirection: 'row-reverse', gap: Spacing.md, marginTop: Spacing.md }}>

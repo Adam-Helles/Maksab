@@ -57,7 +57,7 @@ export default function ProductsScreen() {
       if (search.trim()) {
         local = searchProducts(search.trim(), 200);
       } else {
-        local = getAllProducts(false); // لا تعرض المحذوفة
+        local = getAllProducts(true); // لا تعرض المحذوفة، لكن اعرض غير النشط
       }
 
       if (categoryId) local = local.filter(p => p.category_id === categoryId);

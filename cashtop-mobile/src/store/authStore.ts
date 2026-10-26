@@ -10,8 +10,13 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
 
+  // Device transfer state
+  deviceMismatch: boolean;
+  clearDeviceMismatch: () => void;
+
   // Actions
   login:         (username: string, password: string) => Promise<void>;
+  transferDevice: (username: string, password: string) => Promise<void>;
   signup:        (payload: {
     store_name: string;
     owner_name?: string;
@@ -37,9 +42,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   isAuthenticated: false,
   isLoading:       true,   // true عند بدء التطبيق
   error:           null,
+  deviceMismatch:  false,
   isSubscriptionExpired: false,
   daysUntilExpiry: null,
   setSubscriptionExpired: (expired: boolean) => set({ isSubscriptionExpired: expired }),
+  clearDeviceMismatch: () => set({ deviceMismatch: false, error: null }),
   
   fetchSubscriptionStatus: async () => {
     try {
@@ -65,11 +72,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const tokens = await authApi.login(username, password);
-      
+
       if (!tokens.user?.store_id) {
-        throw new Error('فشل تسجيل الدخول: الحساب غير مرتبط بمتجر صالح (Missing store_id)');
+        throw new Error('فشل تسجيل الدخول: لم يتم إرجاع معرف المتجر (Missing store_id)');
       }
-      
+
       // Tenant Isolation Check
       const localStoreId = getStoreId();
       if (localStoreId && localStoreId !== tokens.user.store_id) {
@@ -90,11 +97,46 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false,
         error: null,
       });
-      get().fetchSubscriptionStatus();
     } catch (err: any) {
-      // client.ts يحوّل كل أخطاء Axios لـ new Error(message) عربي —
-      // الرسالة موجودة في err.message مباشرة وليس في err.response.data.detail
       const serverMessage = err?.message || 'فشل تسجيل الدخول';
+      // Detect device mismatch (403 with specific message)
+      const isDeviceMismatch = err?.response?.status === 403 &&
+        (serverMessage.includes('جهاز آخر') || serverMessage.includes('device'));
+      set({
+        isLoading: false,
+        error: serverMessage,
+        deviceMismatch: isDeviceMismatch,
+      });
+      throw err;
+    }
+  },
+
+  // ── نقل الجهاز (Device Transfer) ──────────────────────────
+  transferDevice: async (username, password) => {
+    set({ isLoading: true, error: null });
+    try {
+      const tokens = await authApi.transferDevicePublic(username, password);
+
+      if (!tokens.user?.store_id) {
+        throw new Error('فشل نقل الجهاز: لم يتم إرجاع معرف المتجر');
+      }
+
+      // Clear old data for new device - fresh start
+      clearDatabase();
+      setStoreId(tokens.user.store_id);
+
+      await TokenStorage.setAccess(tokens.access_token);
+      await TokenStorage.setRefresh(tokens.refresh_token);
+      await TokenStorage.setUser(tokens.user);
+      set({
+        user: tokens.user,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null,
+        deviceMismatch: false,
+      });
+    } catch (err: any) {
+      const serverMessage = err?.message || 'فشل نقل الجهاز';
       set({
         isLoading: false,
         error: serverMessage,

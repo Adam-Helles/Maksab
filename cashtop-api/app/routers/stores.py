@@ -10,8 +10,12 @@ from app.models.user import User, UserRole
 from app.models.license import LicenseKey
 from app.schemas.store import StoreSignupRequest
 from app.schemas.user import TokenResponse, UserResponse
-from app.core.security import hash_password, create_access_token
+from app.core.security import hash_password, verify_password, create_access_token
+from pydantic import BaseModel
+from app.schemas.message import MessageResponse
 from app.core.token_service import issue_refresh_token
+from app.core.auth import get_current_user
+# Duplicate import removed
 from app.core.limiter import limiter
 from app.config import settings
 
@@ -113,3 +117,105 @@ def signup(request: Request, data: StoreSignupRequest, db: Session = Depends(get
         refresh_token=issue_refresh_token(db, admin.id),
         user=UserResponse.model_validate(admin),
     )
+
+# ------------------- Device Transfer Endpoint -------------------
+
+class DeviceTransferRequest(BaseModel):
+    new_device_id: str
+    password: str
+
+@router.post(
+    "/transfer_device",
+    response_model=MessageResponse,
+    status_code=status.HTTP_200_OK,
+    summary="نقل جهاز المتجر إلى هاتف جديد",
+)
+def transfer_device(
+    request: Request,
+    payload: DeviceTransferRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # Verify store exists
+    store = db.query(Store).filter(Store.id == current_user.store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="المحل غير موجود")
+
+    # Verify subscription active
+    if not store.is_active or (store.subscription_expires_at and store.subscription_expires_at < datetime.utcnow()):
+        raise HTTPException(status_code=403, detail="الاشتراك غير نشط")
+
+    # Verify password
+    if not verify_password(payload.password, current_user.password_hash):
+        raise HTTPException(status_code=403, detail="كلمة المرور غير صحيحة")
+
+    # Update allowed_device_id
+    store.allowed_device_id = payload.new_device_id
+    db.add(store)
+    db.commit()
+    return {"detail": "تم نقل الجهاز بنجاح"}
+
+
+# ------------------- Public Device Transfer (No Auth Required) -------------------
+
+class PublicDeviceTransferRequest(BaseModel):
+    username: str
+    password: str
+    new_device_id: str
+
+@router.post(
+    "/transfer_device_public",
+    response_model=TokenResponse,
+    status_code=status.HTTP_200_OK,
+    summary="نقل جهاز المتجر إلى هاتف جديد (بدون توكن)",
+)
+@limiter.limit("5/minute")
+def transfer_device_public(
+    request: Request,
+    payload: PublicDeviceTransferRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    يُستخدم عند محاولة تسجيل الدخول من جهاز جديد وظهور خطأ device mismatch.
+    يتحقق من اسم المستخدم وكلمة المرور، ثم ينقل الجهاز ويُرجع توكنات تسجيل الدخول.
+    """
+    # 1. Verify credentials
+    user = db.query(User).filter(
+        User.username == payload.username.strip().lower(),
+        User.is_active == True
+    ).first()
+
+    if not user or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="اسم المستخدم أو كلمة المرور غير صحيحة",
+        )
+
+    # 2. Verify store exists
+    store = db.query(Store).filter(Store.id == user.store_id).first()
+    if not store:
+        raise HTTPException(status_code=404, detail="المحل غير موجود")
+
+    # 3. Verify subscription active
+    now = datetime.now(timezone.utc)
+    if not store.is_active or (store.subscription_expires_at and store.subscription_expires_at < now):
+        raise HTTPException(status_code=403, detail="الاشتراك غير نشط أو منتهي. يرجى التجديد أولاً.")
+
+    # 4. Update allowed_device_id
+    store.allowed_device_id = payload.new_device_id
+    user.last_login = now
+    db.commit()
+
+    # 5. Return tokens for immediate login
+    access_token = create_access_token(user.id, user.role)
+    try:
+        refresh_token_val = issue_refresh_token(db, user.id)
+    except Exception:
+        db.rollback()
+        refresh_token_val = ""
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token_val,
+        user=UserResponse.model_validate(user),
+    )

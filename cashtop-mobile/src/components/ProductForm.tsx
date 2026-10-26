@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Switch, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Input, Card } from './ui';
 import { Colors, Fonts, Spacing, Radius } from '../types/theme';
-import { categoriesApi } from '../api';
 import type { Product, Category, UnitType } from '../types';
 import { getAllCategories } from '../db/database';
 
@@ -157,8 +156,6 @@ export const ProductForm: React.FC<ProductFormProps> = ({
                onChangeText={(t: string) => set('cost_price', t)} keyboardType="decimal-pad" />
         <Input label="سعر البيع (قطعة) *" value={values.retail_price}
                onChangeText={(t: string) => set('retail_price', t)} keyboardType="decimal-pad" />
-        <Input label="سعر الجملة" value={values.wholesale_price}
-               onChangeText={(t: string) => set('wholesale_price', t)} keyboardType="decimal-pad" />
         <Input label="سعر الكرتونة" value={values.carton_price}
                onChangeText={(t: string) => set('carton_price', t)} keyboardType="decimal-pad" />
         <Input label="نسبة الضريبة %" value={values.tax_rate}
@@ -171,48 +168,12 @@ export const ProductForm: React.FC<ProductFormProps> = ({
           <Text style={{ color: Colors.gray400, textAlign: 'right' }}>لا توجد أصناف بعد</Text>
         ) : (
           <ChipRow
-            options={categories.map(c => ({ value: c.id, label: c.name_ar || c.name }))}
+            options={categories.map(c => ({ value: c.id, label: c.name }))}
             selected={values.category_id}
             onSelect={v => set('category_id', v as string)}
             allowClear
           />
         )}
-      </Card>
-
-      <SectionTitle text="المخزون وتاريخ الصلاحية" />
-      <Card style={{ marginBottom: Spacing.lg }}>
-        <Input label="حد التنبيه للمخزون المنخفض" value={values.min_stock_alert}
-               onChangeText={(t: string) => set('min_stock_alert', t)} keyboardType="number-pad" />
-
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between',
-                       marginTop: Spacing.sm, marginBottom: values.has_expiry ? Spacing.md : 0 }}>
-          <Text style={{ fontSize: Fonts.sizes.base, color: Colors.gray700, fontWeight: '600' }}>
-            له تاريخ صلاحية
-          </Text>
-          <Switch
-            value={values.has_expiry}
-            onValueChange={v => set('has_expiry', v)}
-            trackColor={{ false: Colors.gray200, true: Colors.accentLight }}
-            thumbColor={values.has_expiry ? Colors.accent : Colors.gray400}
-          />
-        </View>
-        {values.has_expiry && (
-          <Input label="تاريخ الصلاحية (YYYY-MM-DD)" value={values.expiry_date}
-                 onChangeText={(t: string) => set('expiry_date', t)} placeholder="2026-12-31" />
-        )}
-
-        <View style={{ flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between',
-                       marginTop: Spacing.sm }}>
-          <Text style={{ fontSize: Fonts.sizes.base, color: Colors.gray700, fontWeight: '600' }}>
-            منتج مميز (يظهر بالمنيو)
-          </Text>
-          <Switch
-            value={values.is_featured}
-            onValueChange={v => set('is_featured', v)}
-            trackColor={{ false: Colors.gray200, true: Colors.accentLight }}
-            thumbColor={values.is_featured ? Colors.accent : Colors.gray400}
-          />
-        </View>
       </Card>
 
       {!!error && (

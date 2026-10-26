@@ -39,6 +39,7 @@ export default function TabsLayout() {
 
   return (
     <Tabs
+      initialRouteName="customers"
       screenOptions={{
         headerShown: false,
         tabBarStyle:           styles.tabBar,
@@ -47,12 +48,12 @@ export default function TabsLayout() {
         tabBarInactiveTintColor: Colors.tabInactive,
       }}
     >
-      {/* ── الرئيسية ───────────────────────────────────── */}
+      {/* ── العملاء ───────────────────────────────────── */}
       <Tabs.Screen
-        name="index"
+        name="customers"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabBarIcon name="grid" label="الرئيسية" focused={focused} />
+            <TabBarIcon name="people" label="العملاء" focused={focused} />
           ),
         }}
       />
@@ -72,7 +73,7 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* ── زر البيع الوسطي ──────────────────────────── */}
+      {/* ── زر المسح الوسطي ──────────────────────────── */}
       <Tabs.Screen
         name="scan"
         options={{
@@ -84,12 +85,12 @@ export default function TabsLayout() {
         }}
       />
 
-      {/* ── المنتجات ──────────────────────────────────── */}
+      {/* ── الموردين ──────────────────────────────────── */}
       <Tabs.Screen
-        name="products"
+        name="suppliers"
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabBarIcon name="cube" label="المنتجات" focused={focused} />
+            <TabBarIcon name="bus" label="الموردين" focused={focused} />
           ),
         }}
       />
@@ -101,6 +102,20 @@ export default function TabsLayout() {
           tabBarIcon: ({ focused }) => (
             <TabBarIcon name="menu" label="المزيد" focused={focused} />
           ),
+        }}
+      />
+
+      {/* ── Hidden tabs - keep index and products accessible but hidden ── */}
+      <Tabs.Screen
+        name="index"
+        options={{
+          href: null,  // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="products"
+        options={{
+          href: null,  // Hide from tab bar, accessible via more page
         }}
       />
     </Tabs>

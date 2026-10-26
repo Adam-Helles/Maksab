@@ -13,6 +13,7 @@ import { api } from '../api/client';
 import {
   getLastSyncTime, setLastSyncTime,
   getPendingCustomers, getPendingProducts, getPendingInvoices,
+  getPendingSuppliers, getPendingCategories,
   getPendingDebtPayments,
   getPendingDeleteDebtPayments, getPendingInvoiceItemsForInvoice,
   markSynced, hardDeleteDebtPayment,
@@ -47,7 +48,7 @@ async function pullServerChanges() {
         notes: c.notes || null,
         credit_limit: c.credit_limit ?? 0,
         current_debt: c.current_debt ?? 0,
-        is_active: c.is_active ? 1 : 0,
+        is_active: (c.is_active === false || c.is_active === 0) ? 0 : 1,
         created_at: c.created_at,
         updated_at: c.updated_at,
         deleted_at: c.deleted_at || null,
@@ -72,7 +73,7 @@ async function pullServerChanges() {
         stock_quantity: p.stock_quantity ?? 0,
         category_id: p.category_id || null,
         supplier_id: p.supplier_id || null,
-        is_active: p.is_active ? 1 : 0,
+        is_active: (p.is_active === false || p.is_active === 0) ? 0 : 1,
         created_at: p.created_at,
         updated_at: p.updated_at,
         deleted_at: p.deleted_at || null,
@@ -259,17 +260,41 @@ function mapPaymentForPush(p: any) {
     amount: p.amount,
     method: p.method,
     notes: p.notes,
-    client_created_at: p.created_at, // Send as client_created_at for customer_sync
+    client_created_at: p.created_at,
+  };
+}
+
+function mapSupplierForPush(s: LocalSupplier) {
+  return {
+    id: s.id,
+    name: s.name,
+    phone: s.phone,
+    address: s.address,
+    notes: s.notes,
+    current_balance: s.current_balance,
+    created_at: s.created_at,
+    updated_at: s.updated_at,
+  };
+}
+
+function mapCategoryForPush(c: LocalCategory) {
+  return {
+    id: c.id,
+    name: c.name,
+    created_at: c.created_at,
+    updated_at: c.updated_at,
   };
 }
 
 // ── Push: ارفع التغييرات المحلية للسيرفر ─────────────────────
 
 async function pushLocalChanges() {
-  const customers = getPendingCustomers();
-  const products = getPendingProducts();
-  const invoices = getPendingInvoices();
-  const payments = getPendingDebtPayments();
+  const customers  = getPendingCustomers();
+  const products   = getPendingProducts();
+  const invoices   = getPendingInvoices();
+  const suppliers  = getPendingSuppliers();
+  const categories = getPendingCategories();
+  const payments   = getPendingDebtPayments();
 
   // بناء invoice_items من الفواتير المعلقة
   const invoiceItems: any[] = [];
@@ -281,20 +306,22 @@ async function pushLocalChanges() {
   }
 
   const hasChanges =
-    customers.length > 0 ||
-    products.length > 0 ||
-    invoices.length > 0;
+    customers.length  > 0 ||
+    products.length   > 0 ||
+    invoices.length   > 0 ||
+    suppliers.length  > 0 ||
+    categories.length > 0;
 
   let totalPushed = 0;
 
-  // 1. Push Payments separately to the specific endpoint that distributes them over invoices
+  // 1. Push Payments separately
   if (payments.length > 0) {
     try {
       const { data: payData } = await api.post('/sync/customers/payments/push', {
         payments: payments.map(mapPaymentForPush),
       });
       const acceptedPayments: string[] = payData.accepted || [];
-      const alreadyApplied: string[] = payData.already_applied || [];
+      const alreadyApplied:   string[] = payData.already_applied || [];
       for (const pay of payments) {
         if (acceptedPayments.includes(pay.id) || alreadyApplied.includes(pay.id)) {
           markSynced('debt_payments', pay.id);
@@ -302,11 +329,11 @@ async function pushLocalChanges() {
       }
       totalPushed += acceptedPayments.length;
     } catch (err) {
-      console.error('[SyncManager] Failed to push payments separately:', err);
+      console.error('[SyncManager] Failed to push payments:', err);
     }
   }
 
-  // 1.5 Push Cancelled Payments
+  // 2. Push Cancelled Payments
   const cancelledPayments = getPendingDeleteDebtPayments();
   if (cancelledPayments.length > 0) {
     try {
@@ -321,17 +348,19 @@ async function pushLocalChanges() {
       }
       totalPushed += acceptedCancel.length;
     } catch (e) {
-      console.warn("Failed to push cancelled payments:", e);
+      console.warn('[SyncManager] Failed to push cancelled payments:', e);
     }
   }
 
   if (!hasChanges) return { pushed: totalPushed };
 
   const { data } = await api.post('/sync/push', {
-    customers: customers.map(mapCustomerForPush),
-    products: products.map(mapProductForPush),
-    invoices: invoices.map(mapInvoiceForPush),
+    customers:     customers.map(mapCustomerForPush),
+    products:      products.map(mapProductForPush),
+    invoices:      invoices.map(mapInvoiceForPush),
     invoice_items: invoiceItems,
+    suppliers:     suppliers.map(mapSupplierForPush),
+    categories:    categories.map(mapCategoryForPush),
   });
 
   // بعد قبول السيرفر، نعلّم كل عنصر على أنه synced
@@ -345,6 +374,12 @@ async function pushLocalChanges() {
   }
   for (const inv of invoices) {
     if (accepted.includes(inv.id)) markSynced('invoices', inv.id);
+  }
+  for (const s of suppliers) {
+    if (accepted.includes(s.id)) markSynced('suppliers', s.id);
+  }
+  for (const cat of categories) {
+    if (accepted.includes(cat.id)) markSynced('categories', cat.id);
   }
 
   totalPushed += accepted.length;

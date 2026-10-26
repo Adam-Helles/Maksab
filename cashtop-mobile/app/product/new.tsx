@@ -49,7 +49,7 @@ export default function NewProductScreen() {
             carton_price: payload.carton_price || 0,
             stock_quantity: payload.stock_quantity || 0,
             tax_rate: payload.tax_rate || 0,
-            is_active: payload.is_active ? 1 : 0,
+            is_active: 1,
             category_id: payload.category_id,
             supplier_id: payload.supplier_id,
             sync_status: 'pending_create',

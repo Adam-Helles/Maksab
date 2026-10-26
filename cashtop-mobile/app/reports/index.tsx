@@ -8,11 +8,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { Input } from '../../src/components/ui';
 import { Colors, Fonts, Spacing, Radius, Shadow } from '../../src/types/theme';
 import { reportsApi } from '../../src/api/reports';
-import { useIsManager } from '../../src/store/authStore';
+import { useIsManager, useAuthStore } from '../../src/store/authStore';
+import { generateAndShareReport } from '../../src/utils/reportGenerator';
 
 export default function ReportsScreen() {
   const router = useRouter();
   const isManager = useIsManager();
+  const user = useAuthStore(s => s.user);
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
@@ -56,6 +58,25 @@ export default function ReportsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ padding: Spacing.lg, paddingBottom: 40 }}>
+
+        {/* ─── تصدير محلي (أوفلاين) ───────────────────────── */}
+        <SectionHeader
+          title="📱 تقرير أوفلاين (فوري)"
+          subtitle="يعمل بدون إنترنت — يُصدّر بيانات الديون والإحصائيات من الجهاز مباشرة"
+          color={Colors.accent}
+        />
+        <View style={styles.card}>
+          <ExportRow
+            icon="document-text-outline"
+            label="تقرير الديون والموردين"
+            subtitle="ملف HTML جاهز للمشاركة عبر واتساب أو حفظه على الجهاز"
+            color={Colors.accent}
+            loading={loadingKey === 'local-report'}
+            onPress={() => run('local-report', () =>
+              generateAndShareReport(user?.full_name)
+            )}
+          />
+        </View>
 
         {/* ─── فترة التقرير ─────────────────────────────────── */}
         <SectionHeader title="🗓️ فترة التقرير" subtitle="اتركها فارغة لتصدير كل البيانات" />

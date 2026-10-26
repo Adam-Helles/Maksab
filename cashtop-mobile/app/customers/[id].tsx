@@ -177,6 +177,11 @@ export default function CustomerStatementScreen() {
   };
 
   const handleDeleteCustomer = () => {
+    if (!customer) return;
+    if (customer.current_debt > 0) {
+      Alert.alert('عذراً', 'لا يمكن حذف عميل عليه ديون غير مسددة');
+      return;
+    }
     Alert.alert('حذف العميل', 'هل أنت متأكد من حذف هذا العميل؟', [
       { text: 'تراجع', style: 'cancel' },
       { text: 'نعم، حذف', style: 'destructive', onPress: () => {

@@ -52,6 +52,26 @@ export const authApi = {
     return data;
   },
 
+  // ---- Device transfer (requires auth) ----
+  transferDevice: async (newDeviceId: string, password: string) => {
+    const { data } = await api.post('/stores/transfer_device', {
+      new_device_id: newDeviceId,
+      password: password,
+    });
+    return data;
+  },
+
+  // ---- Device transfer (public, no auth needed) ----
+  transferDevicePublic: async (username: string, password: string): Promise<AuthTokens> => {
+    const device_id = await getOrCreateDeviceId();
+    const { data } = await api.post<AuthTokens>('/stores/transfer_device_public', {
+      username,
+      password,
+      new_device_id: device_id,
+    });
+    return data;
+  },
+
   getLicenseStatus: async () => {
     const { data } = await api.get('/licenses/status');
     return data;

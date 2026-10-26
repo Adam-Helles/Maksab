@@ -14,7 +14,6 @@ import { ar } from 'date-fns/locale';
 export default function ProductStockHistoryScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const productId = Number(id);
 
   const [product, setProduct] = useState<any>(null);
   const [movements, setMovements] = useState<any[]>([]);
@@ -37,11 +36,11 @@ export default function ProductStockHistoryScreen() {
         }
 
         if (!localProd) {
-          const prod = await productsApi.get(productId);
+          const prod = await productsApi.get(id as any);
           setProduct(prod);
         }
         
-        const movs = await productsApi.getMovements(productId);
+        const movs = await productsApi.getMovements(id as any);
         setMovements(movs);
       } catch (e) {
         Alert.alert('خطأ', 'فشل تحميل سجل الحركات');
@@ -51,7 +50,7 @@ export default function ProductStockHistoryScreen() {
       }
     }
     load();
-  }, [productId]);
+  }, [id]);
 
   if (loading || !product) return <LoadingScreen message="جاري التحميل..." />;
 

@@ -8,8 +8,13 @@ export function getDb(): SQLite.SQLiteDatabase {
 }
 
 export function executeVacuumInto(destinationPath: string): void {
-  // SQLite paths require single quotes to be escaped by doubling them
-  const safePath = destinationPath.replace(/'/g, "''");
+  // expo-file-system returns paths as file:// URIs (e.g. "file:///data/user/0/...").
+  // SQLite's VACUUM INTO rejects URI format — it needs a plain filesystem path.
+  // Strip the "file://" prefix so SQLite gets "/data/user/0/..." instead.
+  const plainPath = destinationPath.startsWith('file://')
+    ? destinationPath.slice('file://'.length)
+    : destinationPath;
+  const safePath = plainPath.replace(/'/g, "''");
   db.runSync(`VACUUM INTO '${safePath}'`);
 }
 
@@ -385,7 +390,7 @@ export function getAllCustomers(includeDeleted = false): LocalCustomer[] {
 
 export function searchCustomers(query: string, limit = 50): LocalCustomer[] {
   return db.getAllSync<LocalCustomer>(
-    'SELECT * FROM customers WHERE name LIKE ? OR phone LIKE ? LIMIT ?',
+    'SELECT * FROM customers WHERE deleted_at IS NULL AND (name LIKE ? OR phone LIKE ?) LIMIT ?',
     `%${query}%`, `%${query}%`, limit
   );
 }
@@ -455,17 +460,17 @@ export function updateCustomerDebt(customerId: string, debtDelta: number): void 
 // ----------------------------------------------------------------------
 
 export function getAllProducts(includeInactive = false): LocalProduct[] {
-  let query = 'SELECT * FROM products';
+  let query = 'SELECT * FROM products WHERE deleted_at IS NULL';
   if (!includeInactive) {
-    query += ' WHERE is_active = 1 AND deleted_at IS NULL';
+    query += ' AND is_active = 1';
   }
   return db.getAllSync<LocalProduct>(query);
 }
 
 export function searchProducts(query: string, limit = 50): LocalProduct[] {
   return db.getAllSync<LocalProduct>(
-    'SELECT * FROM products WHERE name LIKE ? OR barcode_piece LIKE ? OR barcode_carton LIKE ? LIMIT ?',
-    `%${query}%`, `%${query}%`, `%${query}%`, limit
+    'SELECT * FROM products WHERE deleted_at IS NULL AND (name LIKE ? OR name_ar LIKE ? OR barcode_piece LIKE ? OR barcode_carton LIKE ?) LIMIT ?',
+    `%${query}%`, `%${query}%`, `%${query}%`, `%${query}%`, limit
   );
 }
 
@@ -475,7 +480,7 @@ export function getProductById(id: string): LocalProduct | null {
 
 export function getProductByBarcode(barcode: string): LocalProduct | null {
   return db.getFirstSync<LocalProduct>(
-    'SELECT * FROM products WHERE barcode_piece = ? OR barcode_carton = ?',
+    'SELECT * FROM products WHERE deleted_at IS NULL AND (barcode_piece = ? OR barcode_carton = ?)',
     barcode, barcode
   );
 }
@@ -913,6 +918,14 @@ export function getPendingInvoices(): LocalInvoice[] {
   return db.getAllSync<LocalInvoice>("SELECT * FROM invoices WHERE sync_status != 'synced'");
 }
 
+export function getPendingSuppliers(): LocalSupplier[] {
+  return db.getAllSync<LocalSupplier>("SELECT * FROM suppliers WHERE sync_status != 'synced'");
+}
+
+export function getPendingCategories(): LocalCategory[] {
+  return db.getAllSync<LocalCategory>("SELECT * FROM categories WHERE sync_status != 'synced'");
+}
+
 export function getPendingInvoiceItemsForInvoice(invoiceId: string): LocalInvoiceItem[] {
   return db.getAllSync<LocalInvoiceItem>('SELECT * FROM invoice_items WHERE invoice_id = ?', invoiceId);
 }
@@ -921,7 +934,7 @@ export function getPendingInvoiceItemsForInvoice(invoiceId: string): LocalInvoic
 // Mark As Synced
 // ----------------------------------------------------------------------
 
-export function markSynced(table: 'customers' | 'products' | 'invoices' | 'debt_payments', id: string): void {
+export function markSynced(table: 'customers' | 'products' | 'invoices' | 'debt_payments' | 'suppliers' | 'categories', id: string): void {
   db.runSync(`UPDATE ${table} SET sync_status = 'synced' WHERE id = ?`, id);
 }
 

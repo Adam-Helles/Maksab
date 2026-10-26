@@ -87,6 +87,7 @@ export default function PurchaseInvoiceScreen() {
     const q = searchQuery.toLowerCase();
     const res = products.filter(p => 
       p.name.toLowerCase().includes(q) || 
+      (p.name_ar && p.name_ar.includes(searchQuery.trim())) ||
       (p.barcode_piece && p.barcode_piece.includes(q)) ||
       (p.barcode_carton && p.barcode_carton.includes(q))
     ).slice(0, 10);
@@ -106,6 +107,8 @@ export default function PurchaseInvoiceScreen() {
   const updateCart = (productId: string, field: 'quantity' | 'cost_price', value: string) => {
     const num = Number(value);
     if (isNaN(num)) return;
+    if (field === 'quantity' && num < 0) return;
+    if (field === 'cost_price' && num < 0) return;
     setCart(cart.map(x => x.product.id === productId ? { ...x, [field]: num } : x));
   };
 
@@ -118,7 +121,8 @@ export default function PurchaseInvoiceScreen() {
   }, [cart]);
 
   const total = subtotal; 
-  const remaining = total - (Number(paidAmount) || 0);
+  const paid = Math.min(Number(paidAmount) || 0, total);
+  const remaining = Math.max(0, total - paid);
 
   const handleSubmit = async () => {
     if (!selectedSupplier) {
@@ -129,12 +133,17 @@ export default function PurchaseInvoiceScreen() {
       Alert.alert('تنبيه', 'الفاتورة فارغة');
       return;
     }
+    const invalidItem = cart.find(x => x.quantity <= 0 || x.cost_price <= 0);
+    if (invalidItem) {
+      Alert.alert('تنبيه', `المنتج "${invalidItem.product.name_ar || invalidItem.product.name}" يحتوي على كمية أو سعر غير صالح`);
+      return;
+    }
 
     setSubmitting(true);
     try {
       const itemsData = cart.map(item => ({
         product_id: item.product.id,
-        product_name: item.product.name,
+        product_name: item.product.name_ar || item.product.name,
         quantity: item.quantity,
         unit_type: 'piece',
         unit_price: item.cost_price,
@@ -149,7 +158,7 @@ export default function PurchaseInvoiceScreen() {
           invoice_type: 'purchase',
           status: 'completed',
           payment_method: 'cash',
-          payment_status: remaining > 0 ? 'partial' : 'paid',
+          payment_status: paid <= 0 ? 'unpaid' : remaining > 0 ? 'partial' : 'paid',
           customer_id: null,
           customer_name: null,
           supplier_id: selectedSupplier.id,
@@ -157,8 +166,8 @@ export default function PurchaseInvoiceScreen() {
           discount_amount: 0,
           tax_amount: 0,
           total: total,
-          paid_amount: Number(paidAmount) || 0,
-          remaining_amount: remaining > 0 ? remaining : 0,
+          paid_amount: paid,
+          remaining_amount: remaining,
           notes: notes || null,
         }, itemsData);
 
@@ -234,7 +243,7 @@ export default function PurchaseInvoiceScreen() {
                 {searchResults.map(p => (
                   <TouchableOpacity key={p.id} onPress={() => addToCart(p)}
                     style={{ padding: Spacing.md, borderBottomWidth: 1, borderBottomColor: Colors.border, flexDirection: 'row-reverse', justifyContent: 'space-between' }}>
-                    <Text style={{ fontWeight: '700', color: Colors.gray800 }}>{p.name}</Text>
+                    <Text style={{ fontWeight: '700', color: Colors.gray800 }}>{p.name_ar || p.name}</Text>
                     <Text style={{ color: Colors.gray500 }}>{p.stock_quantity} متوفر</Text>
                   </TouchableOpacity>
                 ))}
@@ -250,7 +259,7 @@ export default function PurchaseInvoiceScreen() {
         {cart.map((item, index) => (
           <Card key={index} style={{ marginBottom: Spacing.md }}>
             <View style={{ flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: Spacing.sm }}>
-              <Text style={{ fontWeight: '800', color: Colors.primary }}>{item.product.name}</Text>
+              <Text style={{ fontWeight: '800', color: Colors.primary }}>{item.product.name_ar || item.product.name}</Text>
               <TouchableOpacity onPress={() => removeFromCart(item.product.id)}>
                 <Ionicons name="trash-outline" size={20} color={Colors.danger} />
               </TouchableOpacity>

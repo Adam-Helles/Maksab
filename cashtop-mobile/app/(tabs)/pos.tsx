@@ -12,12 +12,11 @@ import { isBackendReachable } from '../../src/api/client';
 import { useCartStore } from '../../src/store/cartStore';
 import type { Product, Customer, PaymentMethod } from '../../src/types';
 import {
-  searchProducts, getAllProducts,
+  searchProducts,
   createLocalInvoice, updateCustomerDebt, updateProductStock,
   LocalProduct, runInTransaction
 } from '../../src/db/database';
 import { runFullSync } from '../../src/db/syncManager';
-import { reportsApi } from '../../src/api/reports';
 
 const PAYMENT_OPTIONS: { value: PaymentMethod; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
   { value: 'cash',     label: 'نقدي',   icon: 'cash-outline' },
@@ -73,6 +72,9 @@ export default function POSScreen() {
   const [paidAmountText, setPaidAmountText] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // إجمالي الخصم الفعلي (نسبة + مبلغ ثابت)
+  const totalDiscount = Math.max(0, subtotal - (total - taxAmount));
+
   // مزامنة تلقائية في الخلفية عند فتح الشاشة
   useEffect(() => {
     isBackendReachable().then(online => {
@@ -100,6 +102,19 @@ export default function POSScreen() {
   }, [search]);
 
   const handleAdd = (product: Product, unit_type: 'piece' | 'carton') => {
+    // تنبيه المخزون
+    if (product.stock_quantity <= 0) {
+      Alert.alert('⚠️ تنبيه', `المنتج "${product.name_ar || product.name}" غير متوفر في المخزون حالياً.`);
+    } else {
+      const addQtyInPieces = unit_type === 'carton' ? product.pieces_per_carton : 1;
+      const existingItem = items.find(i => i.product.id === product.id && i.unit_type === unit_type);
+      const currentQtyInPieces = existingItem
+        ? (unit_type === 'carton' ? existingItem.quantity * product.pieces_per_carton : existingItem.quantity)
+        : 0;
+      if (currentQtyInPieces + addQtyInPieces > product.stock_quantity) {
+        Alert.alert('⚠️ تنبيه المخزون', `الكمية المطلوبة تتجاوز المخزون المتوفر (${product.stock_quantity} قطعة).`);
+      }
+    }
     addItem(product, unit_type);
     setSearch('');
     setResults([]);
@@ -172,31 +187,34 @@ export default function POSScreen() {
           invoice_type: 'sale',
           status: asDraft ? 'draft' : 'completed',
           payment_method: paymentMethod as any,
-          payment_status: remainingAmount <= 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid',
+          payment_status: asDraft ? 'unpaid' : (remainingAmount <= 0 ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid'),
           customer_id: customerId || null,
           customer_name: selectedCustomer?.name || null,
           supplier_id: null,
           subtotal,
-          discount_amount: discountAmount,
+          discount_amount: totalDiscount,
           tax_amount: taxAmount,
           total,
-          paid_amount: paidAmount,
-          remaining_amount: remainingAmount,
+          paid_amount: asDraft ? 0 : paidAmount,
+          remaining_amount: asDraft ? total : remainingAmount,
           notes: notes || null,
           sync_status: 'pending_create',
         }, invoiceItems);
 
-        // ── خطوة 2: تحديث مخزون المنتجات محلياً ──────────────────────
-        for (const item of items) {
-          const qtyInPieces = item.unit_type === 'carton'
-            ? item.quantity * item.product.pieces_per_carton
-            : item.quantity;
-          updateProductStock(item.product.id, -qtyInPieces);
-        }
+        // ── المسودة لا تؤثر على المخزون أو الديون ──────────────────
+        if (!asDraft) {
+          // ── خطوة 2: تحديث مخزون المنتجات محلياً ────────────────────
+          for (const item of items) {
+            const qtyInPieces = item.unit_type === 'carton'
+              ? item.quantity * item.product.pieces_per_carton
+              : item.quantity;
+            updateProductStock(item.product.id, -qtyInPieces);
+          }
 
-        // ── خطوة 3: تحديث دين العميل محلياً (إذا كان آجل) ────────────
-        if (paymentMethod === 'credit' && customerId && remainingAmount > 0) {
-          updateCustomerDebt(customerId, remainingAmount);
+          // ── خطوة 3: تحديث دين العميل محلياً (إذا كان آجل) ──────────
+          if (paymentMethod === 'credit' && customerId && remainingAmount > 0) {
+            updateCustomerDebt(customerId, remainingAmount);
+          }
         }
       });
 
@@ -412,6 +430,7 @@ export default function POSScreen() {
           padding: Spacing.lg, ...Shadow.lg,
         }}>
           <SummaryRow label="المجموع الفرعي" value={subtotal} />
+          {totalDiscount > 0 && <SummaryRow label="الخصم" value={-totalDiscount} />}
           <SummaryRow label="الضريبة" value={taxAmount} />
           <SummaryRow label="الإجمالي" value={total} bold />
 
